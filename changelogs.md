@@ -13,6 +13,10 @@
 
 ### 2026-10-08
 
+- Fee Tagihan: 9 tes backend, upgrade sintetis 013, baseline init/reset, lint, build, dan tes proxy lolos. Form tambah default 0, edit fee dan total akun diverifikasi dengan data sintetis; screenshot preview/billing-account-fees.png.
+
+- Tagihan: MonthlyFee dan PaymentFee per akun, rupiah bulat nonnegatif default 0, tersedia pada create/detail/list/update. Edit dari klien lama mempertahankan fee yang tidak dikirim. Migration 013 menambahkan kolom/constraint tanpa reset; baseline 000 sampai 013.
+
 - Verifikasi tanggal harga hanya berubah bersama nominal: 7 tes Savings, lint, build, dan tes proxy lolos. Tanggal di bawah estimasi emas/perak diperiksa memakai data sintetis; preview di preview/savings-estimate-date.png.
 
 - Savings: PriceDate hanya berubah saat harga per gram diisi/berubah; edit metadata dan perubahan jumlah mempertahankan tanggal. Harga historis tanpa tanggal tetap NULL sampai harga berubah.

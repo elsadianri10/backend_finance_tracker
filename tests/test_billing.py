@@ -158,3 +158,27 @@ class BillingTests(unittest.IsolatedAsyncioTestCase):
         await self.create(self.card())
         with patch.dict(os.environ, {"ENCRYPTION_KEY": "cd" * 32}):
             self.assertEqual((await self.client.get("/billing/accounts", headers=self.headers)).status_code, 503)
+
+    async def test_account_fees_create_update_preserve_and_validation(self):
+        created=await self.create(self.card(MonthlyFee=15000,PaymentFee=7500))
+        self.assertEqual(created.status_code,201,created.text)
+        item=created.json()
+        self.assertEqual((item['MonthlyFee'],item['PaymentFee']),(15000,7500))
+        path='/billing/accounts/'+item['Id']
+        unchanged=await self.client.patch(path,headers=self.headers,json=self.card())
+        self.assertEqual(unchanged.status_code,200,unchanged.text)
+        self.assertEqual((unchanged.json()['MonthlyFee'],unchanged.json()['PaymentFee']),(15000,7500))
+        updated=await self.client.patch(path,headers=self.headers,json=self.card(MonthlyFee=0,PaymentFee=2500))
+        self.assertEqual((updated.json()['MonthlyFee'],updated.json()['PaymentFee']),(0,2500))
+        for field in ('MonthlyFee','PaymentFee'):
+            for value in (-1,True,1.5,1000000000001):
+                bad=await self.create(self.card(**{field:value}))
+                self.assertEqual(bad.status_code,422,bad.text)
+                self.assertEqual(bad.json()['detail'][0]['loc'][-1],field)
+        old_client=(await self.create(self.card())).json()
+        self.assertEqual((old_client['MonthlyFee'],old_client['PaymentFee']),(0,0))
+        later=await self.create(dict(PlatformId=2,PlatformType='PAY_LATER',HasFixedBillDate=False,MonthlyFee=1000,PaymentFee=2000))
+        self.assertEqual(later.status_code,201,later.text)
+        self.assertEqual(later.json()['PaymentFee'],2000)
+        listed=(await self.client.get('/billing/accounts',headers=self.headers)).json()
+        self.assertEqual(next(row for row in listed if row['Id']==item['Id'])['PaymentFee'],2500)

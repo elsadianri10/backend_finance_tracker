@@ -29,6 +29,7 @@ def account_response(account: BillingAccount, platform_name: str, has_transactio
         "ValidThru": account.valid_thru, "HasFixedBillDate": account.has_fixed_bill_date,
         "BillingDate": account.billing_date, "DueDate": account.due_date,
         "HasTransactions": has_transactions, "CanDelete": can_delete,
+        "MonthlyFee": account.monthly_fee, "PaymentFee": account.payment_fee,
     }
 
 
@@ -46,6 +47,7 @@ async def create_account(payload: BillingAccountCreate, user_id: UUID, db: Async
         account_number_encrypted=encrypted, valid_thru=payload.valid_thru,
         has_fixed_bill_date=payload.has_fixed_bill_date,
         billing_date=payload.billing_date, due_date=payload.due_date,
+        monthly_fee=payload.monthly_fee, payment_fee=payload.payment_fee,
     )
     db.add(account)
     # Prepare the masked response before committing so an encryption failure cannot
@@ -118,6 +120,11 @@ async def update_account(account_id, payload: BillingAccountUpdate, user_id, db)
     account.has_fixed_bill_date = payload.has_fixed_bill_date
     account.billing_date = payload.billing_date
     account.due_date = payload.due_date
+    # Older clients omitting the new fields must not erase existing fees.
+    if 'monthly_fee' in payload.model_fields_set:
+        account.monthly_fee = payload.monthly_fee
+    if 'payment_fee' in payload.model_fields_set:
+        account.payment_fee = payload.payment_fee
     result = account_response(account, platform.name, *flags)
     await db.commit()
     return result
