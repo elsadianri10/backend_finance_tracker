@@ -1,4 +1,5 @@
 import os
+import ssl
 from sqlalchemy import URL
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -10,7 +11,11 @@ DATABASE_URL = URL.create(
     port=int(os.getenv("DB_PORT", "5432")),
     database=os.getenv("DATABASE_NAME", "finance_tracker"),
 )
-engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
+connect_args = {}
+if os.getenv("DB_SSL", "false").strip().lower() in {"true", "1", "yes"}:
+    connect_args["ssl"] = ssl.create_default_context()
+
+engine = create_async_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
 async_session = async_sessionmaker(bind=engine, expire_on_commit=False)
 
 

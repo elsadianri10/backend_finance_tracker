@@ -29,6 +29,8 @@ psql -h localhost -p 5432 -U postgres -d finance_tracker -v ON_ERROR_STOP=1 -f d
 
 Swagger: http://localhost:8000/docs. Struktur SQL dan aturan penomoran: [database/README.md](database/README.md).
 
+Untuk PostgreSQL hosted seperti Neon, isi parameter `DB_*` dari provider dan set `DB_SSL=true` di environment deployment. Koneksi memakai TLS dengan verifikasi sertifikat dan hostname. Gunakan `ENCRYPTION_KEY` lokal yang sama jika database deployment merupakan salinan data lokal; jangan menjalankan baseline reset setelah restore. `DB_SSL` default `false` untuk pengembangan lokal.
+
 ## Konfigurasi Google
 
 Di Google Cloud Console / Google Auth Platform, siapkan branding, audience (test users jika masih testing), lalu buat OAuth client bertipe **Web application**. Isi Authorized JavaScript origins sesuai URL frontend, misalnya `http://localhost:5173`. Masukkan client ID tersebut ke `GOOGLE_CLIENT_ID` backend dan konfigurasi Google Identity Services frontend.
