@@ -1,7 +1,7 @@
--- PostgreSQL consolidated baseline, including migrations 001-009.
--- New/empty database: run this file only. Do NOT run 001-009 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-012.
+-- New/empty database: run this file only. Do NOT run 001-012 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
--- installments, debts and debt payments.
+-- installments, debts, debt payments, savings and saving movements.
 -- Three-month settled-history visibility is a service rule, not a schema column.
 -- Existing wallet_providers rows (including custom platforms) are retained.
 -- Change finance_tracker.reset to 'off' for non-destructive initialization only.
@@ -156,6 +156,48 @@ CREATE TABLE IF NOT EXISTS debt_payments (
     CONSTRAINT ck_debt_payment_sequence CHECK (sequence >= 1)
 );
 
+CREATE TABLE IF NOT EXISTS savings (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id),
+    kind VARCHAR(20) NOT NULL,
+    metal_type VARCHAR(10),
+    name VARCHAR(255) NOT NULL,
+    opening_amount NUMERIC(18,3) NOT NULL,
+    start_date DATE NOT NULL,
+    bank_account_id UUID REFERENCES bank_accounts(id) ON DELETE SET NULL,
+    bank_name VARCHAR(100),
+    bank_account_masked VARCHAR(30),
+    weight_per_piece NUMERIC(12,3),
+    pieces INTEGER,
+    purchase_cost NUMERIC(18,0),
+    price_per_gram NUMERIC(18,0),
+    price_date DATE,
+    maturity_date DATE,
+    interest_rate NUMERIC(5,2),
+    notes VARCHAR(2000) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_saving_kind CHECK (kind IN ('CASH','GOLD','DEPOSIT')),
+    CONSTRAINT ck_saving_opening CHECK (opening_amount > 0),
+    CONSTRAINT ck_saving_metal_type CHECK (
+        (kind = 'GOLD' AND metal_type IS NOT NULL AND metal_type IN ('GOLD','SILVER'))
+        OR (kind <> 'GOLD' AND metal_type IS NULL)
+    )
+);
+CREATE INDEX IF NOT EXISTS ix_savings_user_id ON savings(user_id);
+CREATE TABLE IF NOT EXISTS saving_movements (
+    id UUID PRIMARY KEY,
+    saving_id UUID NOT NULL REFERENCES savings(id),
+    request_id UUID NOT NULL,
+    sequence INTEGER NOT NULL,
+    direction VARCHAR(10) NOT NULL,
+    amount NUMERIC(18,3) NOT NULL,
+    movement_date DATE NOT NULL,
+    notes VARCHAR(2000) NOT NULL,
+    UNIQUE (saving_id, request_id),
+    UNIQUE (saving_id, sequence),
+    CONSTRAINT ck_saving_movement CHECK (direction IN ('ADD','REMOVE') AND amount > 0)
+);
+
 -- IF NOT EXISTS is not an upgrade mechanism. Fail clearly for older schemas.
 DO $$
 DECLARE required_column RECORD;
@@ -164,9 +206,13 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 009.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 012.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
+        ('savings', 'opening_amount'),
+        ('savings', 'metal_type'),
+        ('savings', 'price_date'),
+        ('saving_movements', 'request_id'),
         ('wallet_providers', 'bank_f'),
         ('debts', 'source_bank_account_id'),
         ('debts', 'installment_amounts'),
@@ -182,7 +228,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 009.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 012.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
@@ -191,7 +237,7 @@ END $$;
 DO $$
 BEGIN
     IF current_setting('finance_tracker.reset')::boolean THEN
-        TRUNCATE TABLE bank_accounts, debt_payments, debts, billing_installments, billing_transactions, billing_accounts, users
+        TRUNCATE TABLE saving_movements, savings, bank_accounts, debt_payments, debts, billing_installments, billing_transactions, billing_accounts, users
             RESTART IDENTITY;
     END IF;
 END $$;

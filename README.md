@@ -83,7 +83,7 @@ Frontend sebaiknya menyimpan token dalam memori dan mengirimnya lewat header Aut
 
 Tahap Add Account menyediakan daftar platform dari DB serta create/list/detail akun pengguna pada `/billing/platforms` dan `/billing/accounts`. Field kartu hanya wajib untuk `CREDIT_CARD`; fixed bill date mengontrol BillingDate dan DueDate (1–31). Nomor kartu disimpan sebagai ciphertext AES-256-GCM dan API hanya mengembalikan `AccountNumberMasked`.
 
-Baseline `database/000_init.sql` sekarang mencakup seluruh fitur sampai migration 009. Database baru cukup menjalankan 000; jangan menjalankan 001–009 lagi. Untuk database lama, jalankan hanya migration yang belum diterapkan. Script 000 secara default (`finance_tracker.reset = on`) mengosongkan users, accounts, transactions, installments, debts, debt_payments, dan bank_accounts melalui TRUNCATE, sambil mempertahankan wallet_providers. Gunakan `off` untuk init tanpa menghapus data; lihat [database/README.md](database/README.md) untuk dampak dan langkahnya.
+Baseline `database/000_init.sql` sekarang mencakup seluruh fitur sampai migration 012. Database baru cukup menjalankan 000; jangan menjalankan 001–012 lagi. Untuk database lama, jalankan hanya migration yang belum diterapkan. Script 000 secara default (`finance_tracker.reset = on`) mengosongkan users, accounts, transactions, installments, debts, debt_payments, bank_accounts, savings, dan saving_movements melalui TRUNCATE, sambil mempertahankan wallet_providers. Gunakan `off` untuk init tanpa menghapus data; lihat [database/README.md](database/README.md) untuk dampak dan langkahnya.
 
 Sesuaikan parameter koneksi di atas dengan `.env`. Backend membutuhkan `ENCRYPTION_KEY` (64 karakter hex / 32 byte) yang berbeda dari JWT SECRET_KEY. Bila belum tersedia, generate sekali dengan `python -c "import secrets; print(secrets.token_hex(32))"`. Pertahankan key ini untuk membaca nomor yang sudah disimpan, lalu restart backend setelah setup.
 
@@ -115,3 +115,7 @@ Menu `/debts` di frontend tersambung ke API `/debts` melalui proxy sesi HttpOnly
 Menu /bank-accounts tersambung ke API backend untuk tambah, edit, dan hapus rekening debit, nomor tersensor, dan pencatatan biaya bulanan. Provider bersama memakai wallet_providers.BankF (kolom SQL bank_f), dengan bank dahulu di dropdown Tagihan. Lihat [panduan My Bank Account](docs/bank-accounts.md).
 
 
+
+## Savings
+
+Savings menyediakan tabungan uang, logam mulia (emas/perak) berdasarkan gram/keping, deposito, dan riwayat tambah/kurangi. Ringkasan nominal/gram terpisah; harga emas manual dan bunga deposito hanya informasi. Lihat [API dan aturan Savings](docs/savings.md).

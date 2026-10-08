@@ -11,6 +11,28 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-08
+
+- Verifikasi tanggal harga hanya berubah bersama nominal: 7 tes Savings, lint, build, dan tes proxy lolos. Tanggal di bawah estimasi emas/perak diperiksa memakai data sintetis; preview di preview/savings-estimate-date.png.
+
+- Savings: PriceDate hanya berubah saat harga per gram diisi/berubah; edit metadata dan perubahan jumlah mempertahankan tanggal. Harga historis tanpa tanggal tetap NULL sampai harga berubah.
+
+- Savings: tanggal harga otomatis di server setiap simpan form yang memiliki harga per gram (UTC+7); tambah/kurangi saldo tetap mempertahankan tanggal harga. Tidak membutuhkan migration tambahan.
+
+- Tanggal harga Savings: 7 tes backend, upgrade sintetis 011→012, baseline init/reset, lint, build, dan tes proxy lolos. Kalender dan penyimpanan tanggal diverifikasi dengan data sintetis; preview di FE preview/savings-price-date.png.
+
+- Savings: PriceDate mencatat tanggal harga emas/perak manual. Migration 012 menambahkan kolom nullable tanpa menebak tanggal harga lama; baseline 000 mencakup sampai 012. Perubahan saldo atau edit metadata mempertahankan tanggal harga.
+
+- Savings: kategori Emas Fisik menjadi Logam Mulia dengan MetalType GOLD/SILVER. Identifier Kind GOLD tetap kompatibel; edit tanpa MetalType mempertahankan jenis logam sebelumnya.
+- Migration 011 mengklasifikasikan emas lama sebagai GOLD tanpa mengubah kuantitas, harga, atau riwayat. Baseline 000 mencakup sampai 011.
+- Jenis logam terkunci setelah ada riwayat. Enam tes Savings, pengujian upgrade sintetis 010→011, dan baseline init/reset lolos.
+
+- Menambahkan Savings: tabungan uang, emas fisik berdasarkan gram/keping, dan deposito dengan informasi bunga tahunan opsional.
+- CRUD milik pengguna, pilihan rekening sendiri dengan snapshot tersensor, estimasi emas menggunakan harga per gram manual, dan riwayat tambah/kurangi.
+- Perubahan jumlah memakai Decimal, validasi tanggal berurutan, pencegahan saldo negatif, row lock, dan RequestId idempotent.
+- Migration 010 menambahkan savings/saving_movements. Baseline 000 diperbarui sampai 010 dan reset mencakup kedua tabel baru; provider tetap dipertahankan.
+- Migration 010 diterapkan lokal tanpa mengubah rekaman lama. Seluruh 59 tes backend dan pengujian baseline init/reset pada schema sintetis lolos.
+
 ### 2026-10-07
 
 #### Autentikasi dan keamanan
