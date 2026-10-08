@@ -1,6 +1,6 @@
 # Script database PostgreSQL
 
-- `000_init.sql`: baseline lengkap sampai versi 012 untuk database kosong, sekaligus mengosongkan data aplikasi secara default dengan TRUNCATE; isi wallet_providers tetap dipertahankan. Mencakup users, platforms, accounts, transactions, installments, debts, debt_payments, savings, saving_movements, semua constraint/index, dan 7 platform default (termasuk Blibli Pay Later).
+- `000_init.sql`: baseline lengkap sampai versi 013 untuk database kosong, sekaligus mengosongkan data aplikasi secara default dengan TRUNCATE; isi wallet_providers tetap dipertahankan. Mencakup users, platforms, accounts, transactions, installments, debts, debt_payments, savings, saving_movements, semua constraint/index, dan 7 platform default (termasuk Blibli Pay Later).
 - `001_create_billing_accounts.sql`: platform bank/paylater, relasi tipe yang didukung, akun milik pengguna, dan seed BCA, BRI, GoPay Later, ShopeePay Later.
 - `002_create_billing_transactions.sql`: transaksi per akun dan jadwal cicilan, nominal NUMERIC, serta waktu pembayaran. Telah dijalankan pada database lokal 7 Oktober 2026. Database lain perlu menjalankan script ini sekali.
 - `003_merge_billing_platform_types.sql`: memindahkan tipe ke kolom nullable `billing_platforms.platform_type`, mempertahankan batasan tipe lama, mengganti foreign key akun, dan menghapus tabel relasi lama. Telah dijalankan pada database lokal 7 Oktober 2026. NULL mengizinkan kedua tipe akun.
@@ -9,10 +9,11 @@
 - `006_billing_transaction_date.sql`: menambahkan tanggal transaksi, tanpa mengubah jadwal lama. Telah dijalankan pada database lokal 7 Oktober 2026.
 - `007_debts_receivables.sql`: menambahkan `debts` dan `debt_payments` untuk hutang/piutang, bunga bulanan dari sisa pokok, dan pembayaran bertahap. Telah dijalankan pada database lokal 7 Oktober 2026; data lama tetap dipertahankan.
 - `010_savings.sql`: tabungan uang, emas fisik, deposito, dan riwayat tambah/kurangi. Upgrade additive tanpa reset. Lihat [Savings](../docs/savings.md).
+- `013_billing_account_fees.sql`: fee bulanan dan fee pembayaran akun Tagihan, default 0.
 - `012_savings_price_date.sql`: tanggal harga per gram manual; harga lama tetap tanpa tanggal.
 - `011_savings_precious_metals.sql`: pilihan Emas/Perak pada Logam Mulia, dengan data emas lama diberi metal_type GOLD.
-- Perubahan berikutnya memakai `012_...`, `013_...`, dan seterusnya. Penambahan kolom juga memakai nomor berikutnya.
-- Database baru: jalankan 000 saja; 001–012 sudah tergabung dan tidak perlu dijalankan lagi. Database lama: gunakan hanya migration yang belum diterapkan, berurutan dan sekali per database. Catat versi yang sudah diterapkan. Tidak ada auto-migration saat aplikasi mulai.
+- Perubahan berikutnya memakai `014_...`, `015_...`, dan seterusnya. Penambahan kolom juga memakai nomor berikutnya.
+- Database baru: jalankan 000 saja; 001–013 sudah tergabung dan tidak perlu dijalankan lagi. Database lama: gunakan hanya migration yang belum diterapkan, berurutan dan sekali per database. Catat versi yang sudah diterapkan. Tidak ada auto-migration saat aplikasi mulai.
 - 000 adalah snapshot baseline terkini; perubahan 000 tidak dipakai untuk upgrade database yang sudah berjalan. Jangan ubah migration historis 001 dan seterusnya. Tambahkan file baru dengan `ALTER TABLE` atau `CREATE TABLE` dan transaksi `BEGIN` / `COMMIT`.
 - Buat database terlebih dahulu; script tidak membuat database atau user PostgreSQL.
 
@@ -32,7 +33,7 @@ SELECT set_config('finance_tracker.reset', 'on', true);
 - `on` (default): membuat tabel yang belum ada, lalu menjalankan `TRUNCATE` pada `saving_movements`, `savings`, `bank_accounts`, `debt_payments`, `debts`, `billing_installments`, `billing_transactions`, `billing_accounts`, dan `users`. Semua data simpanan dan riwayatnya, hutang/piutang dan pembayarannya, tagihan/pembayaran, transaksi, akun, dan pengguna dihapus. Struktur tabel serta seluruh isi `wallet_providers` (termasuk platform custom/status aktif) tetap dipertahankan. Seed default yang belum ada ditambahkan tanpa menimpa platform lama. Akun Google perlu login kembali; kunci enkripsi tidak berubah.
 - `off`: hanya membuat tabel yang belum ada dan menambahkan seed yang belum ada; data aplikasi tidak dikosongkan.
 
-Jalankan seluruh file memakai `psql ... -v ON_ERROR_STOP=1 -f database/000_init.sql`. Pastikan database/schema tujuan benar. Script bekerja di schema aktif (`search_path`), tidak memakai DROP maupun TRUNCATE CASCADE. Foreign key dari tabel lain dapat membuat reset gagal; seluruh operasi dibatalkan oleh transaksi. Struktur billing lama tetap perlu migration yang belum diterapkan sampai 012 sebelum menjalankan script ini. Matikan backend saat reset agar tidak ada request bersamaan.
+Jalankan seluruh file memakai `psql ... -v ON_ERROR_STOP=1 -f database/000_init.sql`. Pastikan database/schema tujuan benar. Script bekerja di schema aktif (`search_path`), tidak memakai DROP maupun TRUNCATE CASCADE. Foreign key dari tabel lain dapat membuat reset gagal; seluruh operasi dibatalkan oleh transaksi. Struktur billing lama tetap perlu migration yang belum diterapkan sampai 013 sebelum menjalankan script ini. Matikan backend saat reset agar tidak ada request bersamaan.
 
 Reset belum dijalankan pada database aplikasi. Pengujian init/reset memakai schema acak dengan data sintetis:
 

@@ -21,6 +21,8 @@ class BillingAccountCreate(PascalModel):
     has_fixed_bill_date: StrictBool
     billing_date: int | None = Field(default=None, strict=True, ge=1, le=31)
     due_date: int | None = Field(default=None, strict=True, ge=1, le=31)
+    monthly_fee: int = Field(default=0, strict=True, ge=0, le=1000000000000)
+    payment_fee: int = Field(default=0, strict=True, ge=0, le=1000000000000)
 
     @model_validator(mode="after")
     def validate_conditional_fields(self):
@@ -75,3 +77,5 @@ class BillingAccountResponse(PascalModel):
     due_date: int | None
     has_transactions: bool
     can_delete: bool
+    monthly_fee: int
+    payment_fee: int

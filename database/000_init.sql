@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-012.
--- New/empty database: run this file only. Do NOT run 001-012 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-013.
+-- New/empty database: run this file only. Do NOT run 001-013 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings and saving movements.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -50,7 +50,10 @@ CREATE TABLE IF NOT EXISTS billing_accounts (
     has_fixed_bill_date BOOLEAN NOT NULL,
     billing_date INTEGER,
     due_date INTEGER,
+    monthly_fee NUMERIC(18,0) NOT NULL DEFAULT 0,
+    payment_fee NUMERIC(18,0) NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_billing_account_fees CHECK (monthly_fee BETWEEN 0 AND 1000000000000 AND payment_fee BETWEEN 0 AND 1000000000000),
     CONSTRAINT ck_billing_account_type CHECK (platform_type IN ('CREDIT_CARD', 'PAY_LATER')),
     CONSTRAINT ck_billing_card_fields CHECK (
         (platform_type = 'CREDIT_CARD' AND account_type IS NOT NULL AND account_number_encrypted IS NOT NULL AND valid_thru IS NOT NULL)
@@ -206,12 +209,14 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 012.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 013.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('savings', 'opening_amount'),
         ('savings', 'metal_type'),
         ('savings', 'price_date'),
+        ('billing_accounts', 'monthly_fee'),
+        ('billing_accounts', 'payment_fee'),
         ('saving_movements', 'request_id'),
         ('wallet_providers', 'bank_f'),
         ('debts', 'source_bank_account_id'),
@@ -228,7 +233,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 012.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 013.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
