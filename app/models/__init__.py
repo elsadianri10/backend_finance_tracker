@@ -7,3 +7,4 @@ from .debt_model import Debt, DebtPayment
 __all__ = ["Base", "User", "BillingAccount", "BillingPlatform", "BillingTransaction", "BillingInstallment", "Debt", "DebtPayment"]
 
 from .bank_account_model import BankAccount
+from .savings_model import Saving, SavingMovement
