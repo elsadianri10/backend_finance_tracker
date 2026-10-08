@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+asyncpg
+python-dotenv
+sqlalchemy[asyncio]
+bcrypt
+pyjwt
+httpx
+tzdata
+cryptography
+python-multipart
+openpyxl
+Pillow
+google-auth[requests]

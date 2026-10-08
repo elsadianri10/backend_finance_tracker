@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.venv
+__pycache__
+**/__pycache__
+.git
+app/logs
+archive
+tests

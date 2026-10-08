@@ -1,0 +1,15 @@
+# compose.prod.yaml
+services:
+  app:
+    image: ${IMAGE}
+    container_name: Backend_Finance_Tracker_Prod
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${PORT_SERVER:-8013}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # mapping folder logs host <-> container
+      - ./app/logs:/app/app/logs
