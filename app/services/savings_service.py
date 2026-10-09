@@ -120,6 +120,8 @@ async def detail(saving_id, user_id, db):
 
 
 async def update(saving_id, payload, user_id, db):
+    from app.services.payment_sync_service import lock_owner
+    await lock_owner(user_id, db)
     item = await owned(saving_id, user_id, db, True)
     validate(payload, item)
     movements = await movements_for(item, db)
@@ -133,19 +135,29 @@ async def update(saving_id, payload, user_id, db):
 
 
 async def delete(saving_id, user_id, db):
+    from app.services.payment_sync_service import lock_owner
+    from app.models.routine_model import RoutinePlan, LedgerTransaction
+    await lock_owner(user_id, db)
     item = await owned(saving_id, user_id, db, True)
+    if await db.scalar(select(RoutinePlan.id).where(RoutinePlan.saving_id == item.id).limit(1)) or await db.scalar(select(LedgerTransaction.id).join(SavingMovement, LedgerTransaction.saving_movement_id == SavingMovement.id).where(SavingMovement.saving_id == item.id).limit(1)):
+        raise HTTPException(409, 'Savings terhubung ke transaksi atau rencana rutin dan tidak dapat dihapus')
     await db.execute(sql_delete(SavingMovement).where(SavingMovement.saving_id == item.id))
     await db.delete(item)
     await db.commit()
 
 
-async def add_movement(saving_id, payload, user_id, db):
+async def add_movement(saving_id, payload, user_id, db, commit=True):
+    from app.services.payment_sync_service import lock_owner
+    await lock_owner(user_id, db)
     item = await owned(saving_id, user_id, db, True)
     movements = await movements_for(item, db)
     previous = next((m for m in movements if m.request_id == payload.request_id), None)
     if previous:
         if (previous.direction, previous.amount, previous.movement_date, previous.notes) != (payload.direction, payload.amount, payload.movement_date, payload.notes):
             raise HTTPException(409, 'RequestId already used')
+        if payload.record_transaction:
+            from app.services.savings_sync_service import record_origin
+            await record_origin(item, previous, payload, user_id, db, repeat=True)
         return response(item, movements)
     if item.kind != 'GOLD' and payload.amount != payload.amount.to_integral_value():
         invalid('Amount', 'Nominal rupiah harus bilangan bulat')
@@ -156,7 +168,15 @@ async def add_movement(saving_id, payload, user_id, db):
         invalid('Amount', 'Jumlah melebihi simpanan yang tersedia')
     if payload.direction == 'ADD' and response(item, movements)['Balance'] + payload.amount > (1000000 if item.kind == 'GOLD' else 1000000000000):
         invalid('Amount', 'Jumlah simpanan melewati batas yang didukung')
-    movement = SavingMovement(saving_id=item.id, sequence=len(movements) + 1, **payload.model_dump())
+    movement = SavingMovement(saving_id=item.id, sequence=len(movements) + 1,
+        **payload.model_dump(exclude={'record_transaction', 'source_bank_id'}))
     db.add(movement)
-    await db.commit()
+    await db.flush()
+    if payload.record_transaction:
+        from app.services.savings_sync_service import record_origin
+        await record_origin(item, movement, payload, user_id, db)
+    elif payload.source_bank_id:
+        invalid('SourceBankId', 'Rekening sumber hanya untuk pencatatan Transaksi')
+    if commit:
+        await db.commit()
     return response(item, [*movements, movement])

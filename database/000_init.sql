@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-015.
--- New/empty database: run this file only. Do NOT run 001-015 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-018.
+-- New/empty database: run this file only. Do NOT run 001-018 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -289,6 +289,107 @@ CREATE TABLE IF NOT EXISTS split_bill_shares (
 );
 CREATE INDEX IF NOT EXISTS ix_split_bill_groups_user_id ON split_bill_groups(user_id);
 
+CREATE TABLE IF NOT EXISTS routine_plans (
+	id UUID NOT NULL,
+	user_id UUID NOT NULL,
+	kind VARCHAR(20) NOT NULL,
+	recipient VARCHAR(120) NOT NULL,
+	name VARCHAR(200) NOT NULL,
+	amount BIGINT NOT NULL,
+	status VARCHAR(12) NOT NULL,
+	first_due_date DATE NOT NULL,
+	interval_months INTEGER NOT NULL,
+	total_cycles INTEGER NOT NULL,
+	initial_paid INTEGER NOT NULL,
+	destination_bank_id UUID,
+	billing_transaction_id UUID,
+	debt_id UUID,
+	saving_id UUID,
+	notes VARCHAR(2000) NOT NULL,
+	version INTEGER NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT ck_routine_kind CHECK (kind IN ('SUBSCRIPTION','CONTRIBUTION','TRANSFER')),
+	CONSTRAINT ck_routine_status CHECK (status IN ('ACTIVE','NOTE','STOPPED')),
+	CONSTRAINT ck_routine_amount CHECK (amount BETWEEN 0 AND 1000000000000 AND (status <> 'ACTIVE' OR amount > 0)),
+	CONSTRAINT ck_routine_interval CHECK (interval_months BETWEEN 1 AND 12),
+	CONSTRAINT ck_routine_cycles CHECK (total_cycles BETWEEN 0 AND 60 AND initial_paid >= 0 AND (total_cycles = 0 OR initial_paid <= total_cycles)),
+	CONSTRAINT ck_routine_version CHECK (version > 0),
+	FOREIGN KEY(user_id) REFERENCES users (id),
+	FOREIGN KEY(destination_bank_id) REFERENCES bank_accounts (id) ON DELETE SET NULL,
+	FOREIGN KEY(billing_transaction_id) REFERENCES billing_transactions (id) ON DELETE SET NULL,
+	FOREIGN KEY(debt_id) REFERENCES debts (id) ON DELETE SET NULL,
+	FOREIGN KEY(saving_id) REFERENCES savings (id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_routine_owner ON routine_plans (user_id);
+
+CREATE TABLE IF NOT EXISTS routine_payments (
+	id UUID NOT NULL,
+	plan_id UUID NOT NULL,
+	request_id UUID NOT NULL,
+	sequence INTEGER NOT NULL,
+	due_date DATE NOT NULL,
+	voided_at TIMESTAMP WITH TIME ZONE,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_routine_payment_request UNIQUE (plan_id, request_id),
+	CONSTRAINT ck_routine_payment_sequence CHECK (sequence > 0),
+	FOREIGN KEY(plan_id) REFERENCES routine_plans (id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_routine_payment_sequence ON routine_payments (plan_id, sequence) WHERE voided_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS ledger_transactions (
+	id UUID NOT NULL,
+	user_id UUID NOT NULL,
+	kind VARCHAR(10) NOT NULL,
+	category VARCHAR(20) NOT NULL,
+	description VARCHAR(323) NOT NULL,
+	amount BIGINT NOT NULL,
+	transaction_date DATE NOT NULL,
+	source_bank_id UUID,
+	destination_bank_id UUID,
+	source_label VARCHAR(150) NOT NULL,
+	destination_label VARCHAR(150) NOT NULL,
+	notes VARCHAR(2000) NOT NULL,
+	routine_payment_id UUID,
+	billing_installment_id UUID,
+	debt_payment_id UUID,
+	saving_movement_id UUID,
+	request_id UUID,
+	request_hash VARCHAR(64),
+	legacy_id VARCHAR(200),
+	voided_at TIMESTAMP WITH TIME ZONE,
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_ledger_legacy UNIQUE (user_id, legacy_id),
+	CONSTRAINT uq_ledger_debt_payment UNIQUE (debt_payment_id),
+	CONSTRAINT uq_ledger_saving_movement UNIQUE (saving_movement_id),
+	CONSTRAINT uq_ledger_request UNIQUE (user_id, request_id),
+	CONSTRAINT ck_ledger_kind CHECK (kind IN ('income','expense','transfer')),
+	CONSTRAINT ck_ledger_amount CHECK (amount > 0 AND amount <= 1000000000000),
+	CONSTRAINT ck_ledger_distinct_banks CHECK (source_bank_id IS NULL OR destination_bank_id IS NULL OR source_bank_id <> destination_bank_id),
+	FOREIGN KEY(user_id) REFERENCES users (id),
+	FOREIGN KEY(source_bank_id) REFERENCES bank_accounts (id) ON DELETE SET NULL,
+	FOREIGN KEY(destination_bank_id) REFERENCES bank_accounts (id) ON DELETE SET NULL,
+	UNIQUE (routine_payment_id),
+	FOREIGN KEY(routine_payment_id) REFERENCES routine_payments (id),
+	FOREIGN KEY(billing_installment_id) REFERENCES billing_installments (id) ON DELETE SET NULL,
+	FOREIGN KEY(debt_payment_id) REFERENCES debt_payments (id) ON DELETE SET NULL,
+	FOREIGN KEY(saving_movement_id) REFERENCES saving_movements (id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_ledger_owner_date ON ledger_transactions (user_id, transaction_date);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_billing_installment ON ledger_transactions (billing_installment_id) WHERE voided_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS transaction_imports (
+	user_id UUID NOT NULL,
+	imported_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (user_id),
+	FOREIGN KEY(user_id) REFERENCES users (id)
+);
+
 DO $$
 DECLARE required_column RECORD;
 BEGIN
@@ -296,12 +397,17 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 015.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 018.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('savings', 'opening_amount'),
         ('savings', 'metal_type'),
         ('savings', 'price_date'),
+        ('routine_plans', 'version'),
+        ('ledger_transactions', 'request_hash'),
+        ('ledger_transactions', 'saving_movement_id'),
+        ('routine_plans', 'saving_id'),
+        ('ledger_transactions', 'kind'),
         ('split_bill_groups', 'version'),
         ('split_bill_groups', 'name'),
         ('split_bill_shares', 'participant_id'),
@@ -323,7 +429,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 015.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 018.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
@@ -332,7 +438,7 @@ END $$;
 DO $$
 BEGIN
     IF current_setting('finance_tracker.reset')::boolean THEN
-        TRUNCATE TABLE split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debts, billing_installments, billing_transactions, billing_accounts, users
+        TRUNCATE TABLE ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debts, billing_installments, billing_transactions, billing_accounts, users
             RESTART IDENTITY;
     END IF;
 END $$;

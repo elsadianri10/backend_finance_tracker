@@ -146,7 +146,9 @@ async def detail(transaction_id, user_id, db):
     return result
 
 
-async def mark_paid(transaction_id, installment_id, user_id, db):
+async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sync=True, bank_id=None, notes=''):
+    from app.services.payment_sync_service import lock_owner, billing_ledger
+    await lock_owner(user_id, db)
     item = await owned_transaction(transaction_id, user_id, db, lock=True)
     await generate_subscription(item, db)
     next_bill = await db.scalar(select(BillingInstallment).where(BillingInstallment.transaction_id == item.id, BillingInstallment.paid_at.is_(None)).order_by(BillingInstallment.sequence).limit(1))
@@ -154,8 +156,11 @@ async def mark_paid(transaction_id, installment_id, user_id, db):
         raise HTTPException(409, "Only the next unpaid installment can be paid")
     next_bill.paid_at = datetime.now(timezone.utc)
     await db.flush()
+    if sync:
+        await billing_ledger(item, next_bill, user_id, db, bank_id, notes)
     result = await response(item, db)
-    await db.commit()
+    if commit:
+        await db.commit()
     return result
 
 

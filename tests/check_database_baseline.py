@@ -46,6 +46,11 @@ async def check():
             saving_id = uuid4()
             await db.execute("INSERT INTO savings(id,user_id,kind,name,opening_amount,start_date,notes) VALUES($1,$2,'CASH','Synthetic',1000,'2026-10-01','')",saving_id,user)
             await db.execute("INSERT INTO saving_movements(id,saving_id,request_id,sequence,direction,amount,movement_date,notes) VALUES($1,$2,$3,1,'ADD',500,'2026-10-02','')",uuid4(),saving_id,uuid4())
+            routine_id, payment_id = uuid4(), uuid4()
+            await db.execute("INSERT INTO routine_plans(id,user_id,kind,recipient,name,amount,status,first_due_date,interval_months,total_cycles,initial_paid,notes,version) VALUES($1,$2,'CONTRIBUTION','Synthetic','Routine',1000,'ACTIVE','2026-10-01',1,12,0,'',1)",routine_id,user)
+            await db.execute("INSERT INTO routine_payments(id,plan_id,request_id,sequence,due_date) VALUES($1,$2,$3,1,'2026-10-01')",payment_id,routine_id,uuid4())
+            await db.execute("INSERT INTO ledger_transactions(id,user_id,kind,category,description,amount,transaction_date,notes,source_label,destination_label,routine_payment_id) VALUES($1,$2,'expense','family','Synthetic routine',1000,'2026-10-01','','','',$3)",uuid4(),user,payment_id)
+            await db.execute("INSERT INTO transaction_imports(user_id) VALUES($1)",user)
             await db.execute(sql)
             assert await db.fetchval('SELECT COUNT(*) FROM split_bill_groups') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM savings') == 1
@@ -55,6 +60,8 @@ async def check():
             assert await db.fetchval('SELECT COUNT(*) FROM users') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM billing_installments') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM wallet_providers') == 7
+            for table in ('routine_plans', 'routine_payments', 'ledger_transactions', 'transaction_imports'):
+                assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 1
             await db.execute('CREATE TABLE billing_platform_types(platform_id INTEGER REFERENCES wallet_providers(id))')
             try:
                 await db.execute(sql)
@@ -69,7 +76,7 @@ async def check():
             await db.execute("INSERT INTO wallet_providers(id,name,is_active) VALUES(99,'Custom Platform',false)")
             platforms_before = await db.fetch('SELECT * FROM wallet_providers ORDER BY id')
             await db.execute(reset)
-            for table in ('split_bill_shares', 'split_bill_items', 'split_bill_expenses', 'split_bill_participants', 'split_bill_groups', 'saving_movements', 'savings', 'bank_accounts', 'users', 'billing_accounts', 'billing_transactions', 'billing_installments', 'debts', 'debt_payments'):
+            for table in ('ledger_transactions', 'routine_payments', 'routine_plans', 'transaction_imports', 'split_bill_shares', 'split_bill_items', 'split_bill_expenses', 'split_bill_participants', 'split_bill_groups', 'saving_movements', 'savings', 'bank_accounts', 'users', 'billing_accounts', 'billing_transactions', 'billing_installments', 'debts', 'debt_payments'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
             assert await db.fetch('SELECT * FROM wallet_providers ORDER BY id') == platforms_before
             assert await db.fetchval('SELECT value FROM baseline_sentinel') == 42

@@ -17,6 +17,8 @@ from app.routes.debt_route import router as debt_router
 from app.routes.bank_account_route import router as bank_account_router
 from app.routes.savings_route import router as savings_router
 from app.routes.split_bill_route import router as split_bill_router
+from app.routes.routine_route import router as routine_router
+from app.routes.summary_route import router as summary_router
 
 
 def parse_origins(raw: str) -> list[str]:
@@ -54,6 +56,8 @@ app.include_router(debt_router)
 app.include_router(bank_account_router)
 app.include_router(savings_router)
 app.include_router(split_bill_router)
+app.include_router(routine_router)
+app.include_router(summary_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=parse_origins(os.getenv("ORIGINS", "http://localhost:5173")),
