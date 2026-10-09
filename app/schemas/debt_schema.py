@@ -43,6 +43,7 @@ class PaymentCreate(PascalModel):
     amount: int = Field(strict=True, gt=0, le=9007199254740991)
     payment_date: date
     notes: str = Field(default="", max_length=2000)
+    bank_account_id: UUID | None = None
 
 
 class PaymentResponse(PascalModel):

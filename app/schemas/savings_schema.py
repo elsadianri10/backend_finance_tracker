@@ -35,6 +35,8 @@ class MovementCreate(PascalModel):
     amount: Decimal = Field(gt=0, le=1000000000000, decimal_places=3)
     movement_date: date
     notes: str = Field(default='', max_length=2000)
+    record_transaction: bool = Field(default=False, strict=True)
+    source_bank_id: UUID | None = None
 
 
 class MovementResponse(PascalModel):

@@ -65,7 +65,7 @@ class BankAccountTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get(path,headers=self.headers)).status_code,404)
 
     async def test_validation_does_not_echo_numbers_and_no_secrets(self):
-        for changes in [dict(AccountNumber=12345678),dict(AccountNumber='1234'),dict(CardNumber='123'),dict(CardNumber=None),dict(ValidThru='2029-13'),dict(AdminFee=-1),dict(OthersFee=1.5),dict(AdminFee='15000')]:
+        for changes in [dict(AccountNumber=12345678),dict(AccountNumber='1234'),dict(CardNumber='123'),dict(ValidThru='2029-13'),dict(AdminFee=-1),dict(OthersFee=1.5),dict(AdminFee='15000')]:
             result=await self.create(**changes)
             self.assertEqual(result.status_code,422,result.text)
             self.assertNotIn('input',result.json()['detail'][0])
@@ -76,3 +76,31 @@ class BankAccountTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.create()).status_code,503)
             self.assertEqual((await self.client.get(path,headers=self.headers)).status_code,503)
         self.assertEqual(len((await self.client.get('/bank-accounts',headers=self.headers)).json()),1)
+
+    async def test_optional_card_fields_create_edit_and_clear(self):
+        for mode in ('omitted', 'empty', 'null'):
+            body = self.body()
+            for key in ('CardNumber', 'ValidThru'):
+                if mode == 'omitted':
+                    del body[key]
+                else:
+                    body[key] = '' if mode == 'empty' else None
+            result = await self.client.post('/bank-accounts', headers=self.headers, json=body)
+            self.assertEqual(result.status_code, 201, result.text)
+            self.assertEqual(result.json()['CardNumberMasked'], '')
+            self.assertEqual(result.json()['ValidThru'], '')
+            path = '/bank-accounts/' + result.json()['Id']
+            added = await self.client.patch(path, headers=self.headers, json=self.body())
+            self.assertEqual(added.status_code, 200, added.text)
+            self.assertTrue(added.json()['CardNumberMasked'].endswith('2345'))
+            edited = self.body(ValidThru='')
+            del edited['CardNumber']
+            preserved = await self.client.patch(path, headers=self.headers, json=edited)
+            self.assertEqual(preserved.status_code, 200, preserved.text)
+            self.assertEqual(preserved.json()['CardNumberMasked'], added.json()['CardNumberMasked'])
+            cleared = await self.client.patch(path, headers=self.headers, json=self.body(CardNumber='', ValidThru=''))
+            self.assertEqual(cleared.status_code, 200, cleared.text)
+            self.assertEqual(cleared.json()['CardNumberMasked'], '')
+            self.assertEqual(cleared.json()['ValidThru'], '')
+            fetched = await self.client.get(path, headers=self.headers)
+            self.assertEqual(fetched.json()['CardNumberMasked'], '')

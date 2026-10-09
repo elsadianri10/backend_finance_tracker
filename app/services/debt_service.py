@@ -247,13 +247,21 @@ async def delete(debt_id, user_id, db):
     await db.commit()
 
 
-async def add_payment(debt_id, payload, user_id, db):
+async def add_payment(debt_id, payload, user_id, db, commit=True, sync=True):
+    from app.services.payment_sync_service import lock_owner, debt_ledger
+    from app.services.routine_service import bank_label
+    await lock_owner(user_id, db)
+    await bank_label(payload.bank_account_id, user_id, db)
     item = await owned(debt_id, user_id, db, lock=True)
     payments = await payments_for(item, db)
     previous = next((p for p in payments if p.request_id == payload.request_id), None)
     if previous:
         if (int(previous.amount), previous.payment_date, previous.notes) != (payload.amount, payload.payment_date, payload.notes):
             raise HTTPException(409, "RequestId already used for a different payment")
+        if sync:
+            await debt_ledger(item, previous, user_id, db, payload.bank_account_id)
+            if commit:
+                await db.commit()
         return ledger(item, payments)
     minimum_date = payments[-1].payment_date if payments else item.transaction_date
     if payload.payment_date < minimum_date or payload.payment_date > local_today():
@@ -261,7 +269,11 @@ async def add_payment(debt_id, payload, user_id, db):
     at_payment = ledger(item, payments, payload.payment_date)
     if payload.amount > at_payment["RemainingAmount"]:
         invalid("Amount", "Nominal melebihi sisa pada tanggal pembayaran")
-    payment = DebtPayment(debt_id=item.id, sequence=len(payments) + 1, **payload.model_dump())
+    payment = DebtPayment(debt_id=item.id, sequence=len(payments) + 1, **payload.model_dump(exclude={'bank_account_id'}))
     db.add(payment)
-    await db.commit()
+    await db.flush()
+    if sync:
+        await debt_ledger(item, payment, user_id, db, payload.bank_account_id)
+    if commit:
+        await db.commit()
     return ledger(item, [*payments, payment])

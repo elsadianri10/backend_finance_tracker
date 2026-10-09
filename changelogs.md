@@ -13,6 +13,15 @@
 
 ### 2026-10-09
 
+- Pembayaran dua arah: Transaksi dapat membayar Tagihan, Hutang/Piutang, atau siklus rutin; konfirmasi dari menu asal membuat satu ledger dan memperbarui progres rencana aktif tertaut. Tanggal Tagihan mengikuti waktu konfirmasi UTC+7. Kepemilikan, nominal/jadwal, lock per pengguna, RequestId/hash, FK dan indeks unik mencegah pembayaran ganda; semua perubahan commit bersama. Migration 017 diterapkan tanpa reset/backfill dan seluruh data lama identik. Baseline sampai 017. Verifikasi: 81 tes backend, upgrade/baseline PostgreSQL sintetis, proxy, lint, build, form Tagihan dan penerimaan Piutang.
+
+- Kategori Transaksi: entertainment, education, donation, debt, bonus, investment ditambahkan ke validasi create/update/import. Kategori lama tetap didukung; tidak memerlukan migration database.
+
+- Transaksi menerima kategori top_up (Top Up); validasi nominal rencana aktif memakai pesan “Nominal aktif harus lebih dari 0 (nol)”. Tidak memerlukan perubahan skema database.
+
+- Pengeluaran Rutin: Langganan, Setoran per penerima/komponen, alokasi rekening sendiri, status aktif/catatan/berhenti/selesai, interval 1–12 bulan, dan cicilan sampai 60 kali. Progres awal dapat dicatat tanpa membuat transaksi historis; pembayaran aktual menambah progres dan ledger secara atomik. Pembatalan hanya pembayaran terakhir, dengan audit void dan pencatatan ulang yang aman. Tagihan tertaut memakai installment yang sudah dibayar serta mencegah ledger ganda.
+- Transaksi: ledger milik pengguna untuk pemasukan/pengeluaran/transfer, rekening sumber/tujuan dengan label tersamarkan, CRUD, dan impor satu kali catatan browser. Migration 016 diterapkan lokal tanpa reset: seluruh record/tabel sebelumnya identik dan empat tabel baru kosong; tanpa JSON/JSONB. Baseline 000 sampai 016. Verifikasi: 76 tes backend, upgrade PostgreSQL sintetis termasuk undo/repaid, baseline init/reset, proxy FE, lint, TypeScript, build, dan preview sintetis.
+
 - Split Bill relasional: migration 015 menyalin dokumen lama ke grup/peserta/pengeluaran/item/shares dengan kolom bertipe, composite FK, CHECK dan posisi urutan; menghapus kolom document. API/PDF dan kalkulasi tetap sama, PATCH atomic/versioned, pembacaan memakai shared lock. Baseline 000 diperbarui sampai 015. Dua grup lokal sudah dimigrasikan tanpa reset, dengan backup di folder lokal yang diabaikan Git; semua field/urutan/metadata/perhitungan/transfer identik. Preferensi fitur baru tanpa JSON/JSONB dicatat di AGENTS.md.
 - Verifikasi relasional: 71 tes backend lolos, termasuk 8 tes Split Bill. Upgrade PostgreSQL sintetis memeriksa rollback backfill gagal, composite FK lintas grup, CRUD/cascade, serta data/order/kalkulasi identik; baseline init/reset diuji hanya di schema sintetis. Default biaya kosong diperbaiki menjadi Decimal(0) agar field service charge/pajak yang tidak dikirim tetap valid.
 
