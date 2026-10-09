@@ -12,3 +12,4 @@ python-multipart
 openpyxl
 Pillow
 google-auth[requests]
+reportlab>=5.0.1,<6
