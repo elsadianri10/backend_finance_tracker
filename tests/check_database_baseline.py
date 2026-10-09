@@ -42,10 +42,12 @@ async def check():
             await db.execute("INSERT INTO debts(id,user_id,kind,person_name,principal,transaction_date,interest_type,interest_rate) VALUES($1,$2,'DEBT','Synthetic',1000,'2026-10-01','NONE',0)",debt_id,user)
             await db.execute("INSERT INTO debt_payments(id,debt_id,request_id,sequence,amount,payment_date) VALUES($1,$2,$3,1,500,'2026-10-02')",debt_payment_id,debt_id,uuid4())
             await db.execute("INSERT INTO bank_accounts(id,user_id,platform_id,account_number_encrypted,card_number_encrypted,valid_thru,admin_fee,others_fee) VALUES($1,$2,1,'synthetic-account-ciphertext','synthetic-card-ciphertext','2029-07',15000,0)",uuid4(),user)
+            await db.execute("INSERT INTO split_bill_groups(id,user_id,name,start_date,end_date,version) VALUES($1,$2,'Synthetic','2026-10-01','2026-10-31',1)",uuid4(),user)
             saving_id = uuid4()
             await db.execute("INSERT INTO savings(id,user_id,kind,name,opening_amount,start_date,notes) VALUES($1,$2,'CASH','Synthetic',1000,'2026-10-01','')",saving_id,user)
             await db.execute("INSERT INTO saving_movements(id,saving_id,request_id,sequence,direction,amount,movement_date,notes) VALUES($1,$2,$3,1,'ADD',500,'2026-10-02','')",uuid4(),saving_id,uuid4())
             await db.execute(sql)
+            assert await db.fetchval('SELECT COUNT(*) FROM split_bill_groups') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM savings') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM saving_movements') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM bank_accounts') == 1
@@ -67,7 +69,7 @@ async def check():
             await db.execute("INSERT INTO wallet_providers(id,name,is_active) VALUES(99,'Custom Platform',false)")
             platforms_before = await db.fetch('SELECT * FROM wallet_providers ORDER BY id')
             await db.execute(reset)
-            for table in ('saving_movements', 'savings', 'bank_accounts', 'users', 'billing_accounts', 'billing_transactions', 'billing_installments', 'debts', 'debt_payments'):
+            for table in ('split_bill_shares', 'split_bill_items', 'split_bill_expenses', 'split_bill_participants', 'split_bill_groups', 'saving_movements', 'savings', 'bank_accounts', 'users', 'billing_accounts', 'billing_transactions', 'billing_installments', 'debts', 'debt_payments'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
             assert await db.fetch('SELECT * FROM wallet_providers ORDER BY id') == platforms_before
             assert await db.fetchval('SELECT value FROM baseline_sentinel') == 42

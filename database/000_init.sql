@@ -1,7 +1,7 @@
--- PostgreSQL consolidated baseline, including migrations 001-013.
--- New/empty database: run this file only. Do NOT run 001-013 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-015.
+-- New/empty database: run this file only. Do NOT run 001-015 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
--- installments, debts, debt payments, savings and saving movements.
+-- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
 -- Existing wallet_providers rows (including custom platforms) are retained.
 -- Change finance_tracker.reset to 'off' for non-destructive initialization only.
@@ -202,6 +202,93 @@ CREATE TABLE IF NOT EXISTS saving_movements (
 );
 
 -- IF NOT EXISTS is not an upgrade mechanism. Fail clearly for older schemas.
+CREATE TABLE IF NOT EXISTS split_bill_groups (
+	id UUID NOT NULL,
+	user_id UUID NOT NULL,
+	name VARCHAR(200) NOT NULL,
+	start_date DATE NOT NULL,
+	end_date DATE NOT NULL,
+	version INTEGER NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT ck_split_bill_version CHECK (version > 0),
+	CONSTRAINT ck_split_group_name CHECK (length(trim(name)) > 0),
+	CONSTRAINT ck_split_group_dates CHECK (start_date >= '2000-01-01' AND end_date >= start_date),
+	FOREIGN KEY(user_id) REFERENCES users (id)
+);
+
+CREATE TABLE IF NOT EXISTS split_bill_participants (
+	group_id UUID NOT NULL,
+	id UUID NOT NULL,
+	name VARCHAR(80) NOT NULL,
+	position INTEGER NOT NULL,
+	PRIMARY KEY (group_id, id),
+	CONSTRAINT uq_split_participant_position UNIQUE (group_id, position),
+	CONSTRAINT ck_split_participant_position CHECK (position BETWEEN 0 AND 19),
+	CONSTRAINT ck_split_participant_name CHECK (length(trim(name)) > 0),
+	FOREIGN KEY(group_id) REFERENCES split_bill_groups (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS split_bill_expenses (
+	group_id UUID NOT NULL,
+	id UUID NOT NULL,
+	name VARCHAR(200) NOT NULL,
+	expense_date DATE NOT NULL,
+	paid_by UUID NOT NULL,
+	service_mode VARCHAR(10) NOT NULL,
+	service_value NUMERIC(15, 2) NOT NULL,
+	tax_mode VARCHAR(10) NOT NULL,
+	tax_value NUMERIC(15, 2) NOT NULL,
+	tax_includes_service BOOLEAN NOT NULL,
+	fee_allocation VARCHAR(12) NOT NULL,
+	receipt_total BIGINT,
+	notes VARCHAR(2000) NOT NULL,
+	position INTEGER NOT NULL,
+	PRIMARY KEY (group_id, id),
+	FOREIGN KEY(group_id, paid_by) REFERENCES split_bill_participants (group_id, id),
+	CONSTRAINT uq_split_expense_position UNIQUE (group_id, position),
+	CONSTRAINT ck_split_expense_position CHECK (position BETWEEN 0 AND 99),
+	CONSTRAINT ck_split_expense_name CHECK (length(trim(name)) > 0),
+	CONSTRAINT ck_split_service CHECK (service_mode IN ('AMOUNT','PERCENT') AND service_value >= 0 AND service_value <= 1000000000000 AND (service_mode <> 'PERCENT' OR service_value <= 100) AND (service_mode <> 'AMOUNT' OR service_value = round(service_value))),
+	CONSTRAINT ck_split_tax CHECK (tax_mode IN ('AMOUNT','PERCENT') AND tax_value >= 0 AND tax_value <= 1000000000000 AND (tax_mode <> 'PERCENT' OR tax_value <= 100) AND (tax_mode <> 'AMOUNT' OR tax_value = round(tax_value))),
+	CONSTRAINT ck_split_fee_allocation CHECK (fee_allocation IN ('PROPORTIONAL','EQUAL','MIXED')),
+	CONSTRAINT ck_split_receipt_total CHECK (receipt_total IS NULL OR receipt_total BETWEEN 0 AND 1000000000000),
+	FOREIGN KEY(group_id) REFERENCES split_bill_groups (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS split_bill_items (
+	group_id UUID NOT NULL,
+	expense_id UUID NOT NULL,
+	id UUID NOT NULL,
+	name VARCHAR(200) NOT NULL,
+	amount BIGINT NOT NULL,
+	split_mode VARCHAR(6) NOT NULL,
+	position INTEGER NOT NULL,
+	PRIMARY KEY (group_id, expense_id, id),
+	FOREIGN KEY(group_id, expense_id) REFERENCES split_bill_expenses (group_id, id) ON DELETE CASCADE,
+	CONSTRAINT uq_split_item_position UNIQUE (group_id, expense_id, position),
+	CONSTRAINT ck_split_item_position CHECK (position BETWEEN 0 AND 99),
+	CONSTRAINT ck_split_item_name CHECK (length(trim(name)) > 0),
+	CONSTRAINT ck_split_item_amount CHECK (amount > 0 AND amount <= 1000000000000),
+	CONSTRAINT ck_split_item_mode CHECK (split_mode IN ('EQUAL','CUSTOM'))
+);
+
+CREATE TABLE IF NOT EXISTS split_bill_shares (
+	group_id UUID NOT NULL,
+	expense_id UUID NOT NULL,
+	item_id UUID NOT NULL,
+	participant_id UUID NOT NULL,
+	amount BIGINT NOT NULL,
+	position INTEGER NOT NULL,
+	PRIMARY KEY (group_id, expense_id, item_id, participant_id),
+	FOREIGN KEY(group_id, expense_id, item_id) REFERENCES split_bill_items (group_id, expense_id, id) ON DELETE CASCADE,
+	FOREIGN KEY(group_id, participant_id) REFERENCES split_bill_participants (group_id, id),
+	CONSTRAINT uq_split_share_position UNIQUE (group_id, expense_id, item_id, position),
+	CONSTRAINT ck_split_share_position CHECK (position BETWEEN 0 AND 19),
+	CONSTRAINT ck_split_share_amount CHECK (amount BETWEEN 0 AND 1000000000000)
+);
+CREATE INDEX IF NOT EXISTS ix_split_bill_groups_user_id ON split_bill_groups(user_id);
+
 DO $$
 DECLARE required_column RECORD;
 BEGIN
@@ -209,12 +296,15 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 013.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 015.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('savings', 'opening_amount'),
         ('savings', 'metal_type'),
         ('savings', 'price_date'),
+        ('split_bill_groups', 'version'),
+        ('split_bill_groups', 'name'),
+        ('split_bill_shares', 'participant_id'),
         ('billing_accounts', 'monthly_fee'),
         ('billing_accounts', 'payment_fee'),
         ('saving_movements', 'request_id'),
@@ -233,7 +323,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 013.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 015.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
@@ -242,7 +332,7 @@ END $$;
 DO $$
 BEGIN
     IF current_setting('finance_tracker.reset')::boolean THEN
-        TRUNCATE TABLE saving_movements, savings, bank_accounts, debt_payments, debts, billing_installments, billing_transactions, billing_accounts, users
+        TRUNCATE TABLE split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debts, billing_installments, billing_transactions, billing_accounts, users
             RESTART IDENTITY;
     END IF;
 END $$;

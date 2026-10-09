@@ -11,6 +11,31 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-09
+
+- Split Bill relasional: migration 015 menyalin dokumen lama ke grup/peserta/pengeluaran/item/shares dengan kolom bertipe, composite FK, CHECK dan posisi urutan; menghapus kolom document. API/PDF dan kalkulasi tetap sama, PATCH atomic/versioned, pembacaan memakai shared lock. Baseline 000 diperbarui sampai 015. Dua grup lokal sudah dimigrasikan tanpa reset, dengan backup di folder lokal yang diabaikan Git; semua field/urutan/metadata/perhitungan/transfer identik. Preferensi fitur baru tanpa JSON/JSONB dicatat di AGENTS.md.
+- Verifikasi relasional: 71 tes backend lolos, termasuk 8 tes Split Bill. Upgrade PostgreSQL sintetis memeriksa rollback backfill gagal, composite FK lintas grup, CRUD/cascade, serta data/order/kalkulasi identik; baseline init/reset diuji hanya di schema sintetis. Default biaya kosong diperbaiki menjadi Decimal(0) agar field service charge/pajak yang tidak dikirim tetap valid.
+
+- PDF Split Bill: semua judul kolom memakai font bold, termasuk ringkasan peserta, rincian biaya, saran transfer, item, dan pembagian per bill. Header berulang di halaman lanjutan memakai gaya yang sama; hasil diperiksa melalui PDF sintetis.
+
+- Koreksi urutan PDF: bill mengikuti Tanggal Pengeluaran (terlama dahulu, stabil untuk tanggal sama). Urutan nama peserta dan item bersama paling akhir hanya di dalam masing-masing bill.
+
+- PDF Split Bill: tambahan jarak sebelum Daftar Pengeluaran / Transaksi; tabel peserta dan nama penerima diurutkan abjad. Bill/item berdasarkan penerima dengan semua peserta di akhir. Urutan hanya untuk ekspor, tanpa perubahan kalkulasi atau data tersimpan. Tes backend dan PDF sintetis Elsa/Nata/bersama lolos.
+
+- PDF Split Bill menjadi A4 portrait, ringkasan peserta/rincian biaya dipecah menjadi tabel yang sesuai lebar halaman. Subjudul Daftar Pengeluaran / Transaksi ditambahkan sebelum bill pertama. Contoh 2 peserta tetap satu halaman, tes backend serta render grup 20 peserta diperiksa.
+
+- PDF Split Bill: rincian bill mengalir tanpa pemisah halaman wajib, spacing dirapatkan tanpa mengecilkan teks tabel. Contoh Ramen YA 2 peserta muat satu halaman; contoh 20 peserta/2 bill tetap terbaca dengan pergantian halaman otomatis. Tes backend dan render PDF diperiksa.
+
+- Split Bill: tombol Export PDF per grup; PDF A4 landscape berisi ringkasan peserta, saran transfer, detail pengeluaran dan penyesuaian struk. Endpoint/proxy milik user, JWT server, no-store; dependency backend ReportLab. Tes backend termasuk ownership ekspor, proxy unduhan PDF, lint dan build lolos. Tata letak 20 peserta diperiksa lewat render PDF sintetis di preview/.
+
+- Split Bill: Total Akhir Struk opsional, selisih proporsional dan baris Penyesuaian Struk. Total pembayaran serta saran transfer mengikuti nominal akhir; data lama tanpa field tetap sama. Tersimpan dalam JSONB tanpa migration tambahan. Tujuh tes backend termasuk contoh Rp 177.021 ke Rp 177.000, penyesuaian positif/negatif/nol dan validasi nominal.
+
+- Split Bill: default service charge rata ke semua peserta; pajak mengikuti konsumsi + bagian service charge. Mode MIXED ditambahkan tanpa mengubah kalkulasi pengeluaran lama, dengan 6 tes backend termasuk peserta tanpa konsumsi dan pembulatan nominal.
+
+- Verifikasi Split Bill: 5 tes backend, migration 014 dengan data lama tetap utuh, baseline init/reset sintetis, lint, production build, dan tes proxy 20 peserta lolos. Form simpan dan ringkasan transfer diperiksa melalui preview sintetis empat peserta; screenshot di preview/split-bill-preview.png dan preview/split-bill-form.png pada proyek frontend.
+
+- Split Bill Calculator: grup 2–20 peserta, banyak pengeluaran, pembagian item rata/custom, biaya nominal/persen, pajak dengan opsi service charge, pembulatan rupiah tepat, ringkasan peserta dan saran transfer saldo gabungan. CRUD milik user, optimistic Version, migration 014 tanpa reset; baseline 000 sampai 014.
+
 ### 2026-10-08
 
 - Fee Tagihan: 9 tes backend, upgrade sintetis 013, baseline init/reset, lint, build, dan tes proxy lolos. Form tambah default 0, edit fee dan total akun diverifikasi dengan data sintetis; screenshot preview/billing-account-fees.png.
