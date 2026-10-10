@@ -21,3 +21,8 @@ async def get_current_user(
     if credentials is None:
         raise HTTPException(401, "Bearer token is required", headers={"WWW-Authenticate": "Bearer"})
     return await user_from_access_token(credentials.credentials, db)
+
+
+async def me(response: Response, user: User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "no-store"
+    return user

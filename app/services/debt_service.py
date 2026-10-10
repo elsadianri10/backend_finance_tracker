@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
+from typing import NoReturn
 from fastapi import HTTPException
 from sqlalchemy import select
 
@@ -9,7 +10,7 @@ from app.helpers.bank_encryption import masked
 from app.services.billing_transaction_service import local_today, month_date
 
 
-def invalid(field, message):
+def invalid(field, message) -> NoReturn:
     raise HTTPException(422, [{"loc": ["body", field], "msg": message, "type": "value_error"}])
 
 

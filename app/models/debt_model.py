@@ -2,8 +2,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, UniqueConstraint, Uuid, func, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint, Uuid, func, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base_model import Base
 
@@ -29,11 +29,41 @@ class Debt(Base):
     source_bank_name: Mapped[str | None] = mapped_column(String(100))
     source_account_number_masked: Mapped[str | None] = mapped_column(String(30))
     installment_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    installment_amounts: Mapped[list] = mapped_column(JSON, nullable=False, server_default=text("'[]'"))
+    installments: Mapped[list["DebtInstallment"]] = relationship(
+        cascade="all, delete-orphan", lazy="selectin", order_by="DebtInstallment.sequence",
+    )
     interest_type: Mapped[str] = mapped_column(String(20), nullable=False)
     interest_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     notes: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def installment_amounts(self) -> list[int]:
+        return [int(row.amount) for row in sorted(self.installments, key=lambda row: row.sequence)]
+
+    @installment_amounts.setter
+    def installment_amounts(self, amounts: list[int]) -> None:
+        existing = {row.sequence: row for row in self.installments}
+        rows = []
+        for sequence, amount in enumerate(amounts, start=1):
+            row = existing.get(sequence)
+            if row is None:
+                row = DebtInstallment(sequence=sequence, amount=Decimal(amount))
+            else:
+                row.amount = Decimal(amount)
+            rows.append(row)
+        self.installments = rows
+
+
+class DebtInstallment(Base):
+    __tablename__ = "debt_installments"
+    __table_args__ = (
+        CheckConstraint("sequence BETWEEN 1 AND 60", name="ck_debt_installment_sequence"),
+        CheckConstraint("amount > 0 AND amount <= 1000000000000", name="ck_debt_installment_amount"),
+    )
+    debt_id: Mapped[UUID] = mapped_column(ForeignKey("debts.id", ondelete="CASCADE"), primary_key=True)
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
 
 
 class DebtPayment(Base):

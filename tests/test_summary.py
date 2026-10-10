@@ -2,7 +2,7 @@ import unittest
 from datetime import date, datetime, timezone
 from uuid import uuid4
 from unittest.mock import patch
-from sqlalchemy import select, func
+from sqlalchemy import select, func, event
 import test_billing as fixture
 import test_savings_sync as savings_fixture
 import test_payment_sync as payment_fixture
@@ -107,3 +107,36 @@ class SummaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['Banks'],dict(Count=2,MonthlyFees=30))
         self.assertEqual(result['MonthTotals']['Earnings'],0)
         self.assertEqual(result['MonthTotals']['Expenses'],0)
+
+    async def test_options_subscription_select_count_is_constant(self):
+        from app.services.billing_transaction_service import local_today
+        first = local_today().replace(day=1)
+        async with self.sessions() as db:
+            account=BillingAccount(user_id=self.user_id,platform_id=1,platform_type='PAY_LATER',has_fixed_bill_date=False,monthly_fee=0,payment_fee=0)
+            db.add(account); await db.commit()
+            account_id = account.id
+        async def add(count):
+            async with self.sessions() as db:
+                db.add_all([BillingTransaction(account_id=account_id,description='Synthetic '+str(i),tenor=0,
+                    transaction_kind='SUBSCRIPTION',transaction_date=first,first_installment=first,amount=100,notes='') for i in range(count)])
+                await db.commit()
+        selects=[]
+        def record(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith('SELECT'):
+                selects.append(statement)
+        await add(1)
+        event.listen(self.engine.sync_engine, 'before_cursor_execute', record)
+        try:
+            result=await self.client.get('/routine/options',headers=self.headers)
+            self.assertEqual(result.status_code,200,result.text)
+            single_count=len(selects)
+            await add(4)
+            selects.clear()
+            result=await self.client.get('/routine/options',headers=self.headers)
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(len(result.json()['Bills']),5)
+            self.assertEqual(len(selects),single_count)
+            self.assertEqual(sum('max(billing_installments.sequence)' in sql for sql in selects),1)
+            self.assertTrue(all(len(row['UnpaidInstallments'])==1 for row in result.json()['Bills']))
+        finally:
+            event.remove(self.engine.sync_engine, 'before_cursor_execute', record)

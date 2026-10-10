@@ -1,5 +1,7 @@
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 import logging
+from typing import Any
 from uuid import UUID
 
 import jwt
@@ -42,7 +44,7 @@ class GoogleRequest(Request):
         return super().__call__(*args, **kwargs)
 
 
-def verify_google_token(token: str) -> dict:
+def verify_google_token(token: str) -> Mapping[str, Any]:
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(503, "Configure GOOGLE_CLIENT_ID")
     try:

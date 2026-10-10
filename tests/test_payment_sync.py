@@ -90,8 +90,12 @@ class PaymentSyncTests(unittest.IsolatedAsyncioTestCase):
         remaining=(await self.client.get('/debts/'+debt['Id'],headers=self.headers)).json()
         self.assertEqual(remaining['RemainingAmount'],500)
         receipt=await self.debt('RECEIVABLE')
-        self.assertEqual((await self.client.post('/debts/'+receipt['Id']+'/payments',headers=self.headers,json=payload)).status_code,201)
-        self.assertEqual((await self.rows())[0]['Kind'],'income')
+        receipt_payment = await self.client.post('/debts/'+receipt['Id']+'/payments',headers=self.headers,json=payload)
+        self.assertEqual(receipt_payment.status_code, 201, receipt_payment.text)
+        payment_id = receipt_payment.json()['Payments'][0]['Id']
+        receipt_rows = [row for row in await self.rows() if row['DebtPaymentId'] == payment_id]
+        self.assertEqual(len(receipt_rows), 1)
+        self.assertEqual(receipt_rows[0]['Kind'], 'income')
 
     async def test_billing_origin_timestamp_and_routine_auto_progress(self):
         item,bills=await self.bill()

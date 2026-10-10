@@ -55,15 +55,16 @@ async def apply_movement(ledger, saving_id, direction, request_id, user_id, db):
     bank_id = ledger.source_bank_id if direction == 'REMOVE' else ledger.destination_bank_id
     await validate_target(saving_id, bank_id, user_id, db)
     movement_request = uuid5(request_id, 'saving-movement')
-    await savings_service.add_movement(saving_id, MovementCreate(RequestId=movement_request,
-        Direction=direction, Amount=ledger.amount, MovementDate=ledger.transaction_date,
-        Notes=ledger.description), user_id, db, commit=False)
+    await savings_service.add_movement(saving_id, MovementCreate.model_validate({
+        'RequestId': movement_request, 'Direction': direction, 'Amount': ledger.amount,
+        'MovementDate': ledger.transaction_date, 'Notes': ledger.description}), user_id, db, commit=False)
     movement = await db.scalar(select(SavingMovement).where(SavingMovement.saving_id == saving_id, SavingMovement.request_id == movement_request))
     ledger.saving_movement_id = movement.id
 
 
 async def reverse_movement(ledger, user_id, db):
     movement = await db.get(SavingMovement, ledger.saving_movement_id)
-    await savings_service.add_movement(movement.saving_id, MovementCreate(RequestId=uuid5(ledger.id, 'saving-reversal'),
-        Direction='REMOVE' if movement.direction == 'ADD' else 'ADD', Amount=movement.amount,
-        MovementDate=savings_service.local_today(), Notes='Pembatalan · ' + ledger.description), user_id, db, commit=False)
+    await savings_service.add_movement(movement.saving_id, MovementCreate.model_validate({
+        'RequestId': uuid5(ledger.id, 'saving-reversal'),
+        'Direction': 'REMOVE' if movement.direction == 'ADD' else 'ADD', 'Amount': movement.amount,
+        'MovementDate': savings_service.local_today(), 'Notes': 'Pembatalan · ' + ledger.description}), user_id, db, commit=False)

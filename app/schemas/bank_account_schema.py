@@ -19,7 +19,7 @@ class BankAccountCreate(PascalModel):
 
 class BankAccountUpdate(BankAccountCreate):
     # Omitted numbers preserve existing values; an explicit empty card clears it.
-    account_number: str = Field(default=None, pattern=r"^[0-9]{5,30}$")
+    account_number: str = Field(default='', pattern=r"^[0-9]{5,30}$")
 
 
 class BankAccountResponse(PascalModel):

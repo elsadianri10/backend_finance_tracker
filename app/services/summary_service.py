@@ -1,6 +1,6 @@
 from calendar import monthrange
 from datetime import date
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from app.models.routine_model import LedgerTransaction
 from app.models.billing_model import BillingAccount
 from app.models.billing_transaction_model import BillingTransaction, BillingInstallment
@@ -14,16 +14,21 @@ async def summary(user_id, month, db):
     start = date.fromisoformat(month + '-01')
     end = start.replace(day=monthrange(start.year, start.month)[1])
     today = local_today()
-    rows = list(await db.scalars(select(LedgerTransaction).where(LedgerTransaction.user_id == user_id,
-        LedgerTransaction.voided_at.is_(None), LedgerTransaction.transaction_date.between(start, end))))
-    earnings = sum(row.amount for row in rows if row.kind == 'income' and row.category not in ('cash_withdrawal', 'receivable'))
-    received = sum(row.amount for row in rows if row.kind == 'income' and row.category == 'receivable')
-    expenses = sum(row.amount for row in rows if row.kind == 'expense')
+    def total(condition):
+        return func.coalesce(func.sum(case((condition, LedgerTransaction.amount), else_=0)), 0)
+    row = (await db.execute(select(
+        total((LedgerTransaction.kind == 'income') & LedgerTransaction.category.not_in(('cash_withdrawal', 'receivable'))),
+        total((LedgerTransaction.kind == 'income') & (LedgerTransaction.category == 'receivable')),
+        total(LedgerTransaction.kind == 'expense'),
+        total((LedgerTransaction.kind == 'transfer') & (LedgerTransaction.category == 'savings')),
+        total(LedgerTransaction.category == 'cash_withdrawal'), func.count())
+        .where(LedgerTransaction.user_id == user_id, LedgerTransaction.voided_at.is_(None),
+               LedgerTransaction.transaction_date.between(start, end)))).one()
+    earnings, received, expenses, allocation, withdrawn, count = map(int, row)
     month_totals = dict(Earnings=earnings, Expenses=expenses, ReceivableReceived=received, NetCashflow=earnings+received-expenses,
-        AllocationTransferred=sum(row.amount for row in rows if row.kind == 'transfer' and row.category == 'savings'),
-        CashWithdrawn=sum(row.amount for row in rows if row.category == 'cash_withdrawal'), TransactionsCount=len(rows))
+        AllocationTransferred=allocation, CashWithdrawn=withdrawn, TransactionsCount=count)
     savings = await savings_service.list_savings(user_id, db)
-    assets = dict(CashBalance=0, DepositBalance=0, GoldGrams=0, SilverGrams=0, GoldValue=0, SilverValue=0, UnpricedMetalsCount=0)
+    assets: dict[str, int | float] = dict(CashBalance=0, DepositBalance=0, GoldGrams=0, SilverGrams=0, GoldValue=0, SilverValue=0, UnpricedMetalsCount=0)
     for item in savings:
         if item['Kind'] == 'CASH':
             assets['CashBalance'] += int(item['Balance'])

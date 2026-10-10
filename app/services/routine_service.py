@@ -1,8 +1,10 @@
 import calendar
 from datetime import date, datetime, timezone
-from uuid import uuid4, uuid5
+from typing import Any, NoReturn
+from uuid import UUID, uuid4, uuid5
 from fastapi import HTTPException
 from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.routine_model import RoutinePlan, RoutinePayment, LedgerTransaction, TransactionImport
 from app.models.user_model import User
 from app.models.billing_transaction_model import BillingTransaction, BillingInstallment
@@ -11,7 +13,7 @@ from app.models.debt_model import Debt, DebtPayment
 from app.services.bank_account_service import detail as bank_detail, list_accounts
 
 
-def invalid(message):
+def invalid(message) -> NoReturn:
     raise HTTPException(422, [{'loc': ['body'], 'msg': message, 'type': 'value_error'}])
 
 
@@ -124,8 +126,11 @@ async def options(user_id, db):
     await lock_owner(user_id, db)
     banks = await list_accounts(user_id, db)
     bills = (await db.execute(select(BillingTransaction, BillingAccount.account_type).join(BillingAccount, BillingTransaction.account_id == BillingAccount.id).where(BillingAccount.user_id == user_id).order_by(BillingTransaction.description))).all()
+    subscription_ids = [bill.id for bill, _ in bills if bill.transaction_kind == 'SUBSCRIPTION']
+    latest = dict((await db.execute(select(BillingInstallment.transaction_id, func.max(BillingInstallment.sequence))
+        .where(BillingInstallment.transaction_id.in_(subscription_ids)).group_by(BillingInstallment.transaction_id))).all()) if subscription_ids else {}
     for bill, label in bills:
-        await billing.generate_subscription(bill, db)
+        await billing.generate_subscription(bill, db, latest=latest.get(bill.id, 0))
     installments = list(await db.scalars(select(BillingInstallment).join(BillingTransaction, BillingInstallment.transaction_id == BillingTransaction.id).join(BillingAccount, BillingTransaction.account_id == BillingAccount.id).where(BillingAccount.user_id == user_id).order_by(BillingInstallment.sequence)))
     recorded = set(await db.scalars(select(LedgerTransaction.billing_installment_id).where(LedgerTransaction.user_id == user_id, LedgerTransaction.voided_at.is_(None), LedgerTransaction.routine_payment_id.is_not(None), LedgerTransaction.billing_installment_id.is_not(None))))
     debts = await debt_service.list_debts(user_id, db)
@@ -180,10 +185,13 @@ async def plan_response(plan, month, db, records=None):
             'CanDelete': not records, 'Payments': history}
 
 
-async def list_plans(user_id, month, db):
+async def list_plans(user_id: UUID, month: str, db: AsyncSession) -> list[dict[str, Any]]:
     rows = list(await db.scalars(select(RoutinePlan).where(RoutinePlan.user_id == user_id).order_by(RoutinePlan.recipient, RoutinePlan.name, RoutinePlan.id).with_for_update(read=True)))
     records = (await db.execute(select(RoutinePayment, LedgerTransaction).join(LedgerTransaction, LedgerTransaction.routine_payment_id == RoutinePayment.id).join(RoutinePlan, RoutinePayment.plan_id == RoutinePlan.id).where(RoutinePlan.user_id == user_id).order_by(RoutinePayment.sequence))).all()
-    return [await plan_response(row, month, db, records) for row in rows]
+    grouped = {}
+    for pair in records:
+        grouped.setdefault(pair[0].plan_id, []).append(pair)
+    return [await plan_response(row, month, db, grouped.get(row.id, [])) for row in rows]
 
 
 async def save_plan(payload, user_id, month, db, item_id=None):
@@ -268,8 +276,9 @@ async def pay(plan_id, payload, user_id, month, db, commit=True):
     if plan.debt_id:
         from app.services import debt_service
         from app.schemas.debt_schema import PaymentCreate
-        await debt_service.add_payment(plan.debt_id, PaymentCreate(RequestId=payload.request_id, Amount=payload.amount,
-            PaymentDate=payload.payment_date, BankAccountId=payload.source_bank_id, Notes=payload.notes), user_id, db, commit=False, sync=False)
+        await debt_service.add_payment(plan.debt_id, PaymentCreate.model_validate({
+            'RequestId': payload.request_id, 'Amount': payload.amount, 'PaymentDate': payload.payment_date,
+            'BankAccountId': payload.source_bank_id, 'Notes': payload.notes}), user_id, db, commit=False, sync=False)
         item = await owned(Debt, plan.debt_id, user_id, db)
         payment = await db.scalar(select(DebtPayment).where(DebtPayment.debt_id == item.id, DebtPayment.request_id == payload.request_id))
         await debt_ledger(item, payment, user_id, db, payload.source_bank_id, plan, payload.request_id)
@@ -332,8 +341,9 @@ async def linked_transaction(payload, user_id, db):
         if payload.kind != expected:
             invalid('Jenis transaksi tidak sesuai Hutang/Piutang yang dipilih')
         bank = payload.destination_bank_id if expected == 'income' else payload.source_bank_id
-        await debt_service.add_payment(item.id, PaymentCreate(RequestId=payload.request_id, Amount=payload.amount,
-            PaymentDate=payload.transaction_date, Notes=payload.notes, BankAccountId=bank), user_id, db, commit=False)
+        await debt_service.add_payment(item.id, PaymentCreate.model_validate({
+            'RequestId': payload.request_id, 'Amount': payload.amount, 'PaymentDate': payload.transaction_date,
+            'Notes': payload.notes, 'BankAccountId': bank}), user_id, db, commit=False)
         payment = await db.scalar(select(DebtPayment).where(DebtPayment.debt_id == item.id, DebtPayment.request_id == payload.request_id))
         return await debt_ledger(item, payment, user_id, db, bank)
     if payload.billing_installment_id:
@@ -357,9 +367,10 @@ async def linked_transaction(payload, user_id, db):
             BillingInstallment.paid_at.is_(None)).order_by(BillingInstallment.sequence).limit(1))
         if not installment_id:
             raise HTTPException(409, 'Tidak ada Tagihan yang belum dibayar')
-    await pay(plan.id, PaymentInput(RequestId=payload.request_id, Sequence=payload.routine_sequence, Amount=payload.amount,
-        PaymentDate=payload.transaction_date, SourceBankId=payload.source_bank_id,
-        BillingInstallmentId=installment_id, Notes=payload.notes), user_id, payload.transaction_date.strftime('%Y-%m'), db, commit=False)
+    await pay(plan.id, PaymentInput.model_validate({
+        'RequestId': payload.request_id, 'Sequence': payload.routine_sequence, 'Amount': payload.amount,
+        'PaymentDate': payload.transaction_date, 'SourceBankId': payload.source_bank_id,
+        'BillingInstallmentId': installment_id, 'Notes': payload.notes}), user_id, payload.transaction_date.strftime('%Y-%m'), db, commit=False)
     payment = await db.scalar(select(RoutinePayment).where(RoutinePayment.plan_id == plan.id, RoutinePayment.request_id == payload.request_id))
     return await db.scalar(select(LedgerTransaction).where(LedgerTransaction.routine_payment_id == payment.id))
 
