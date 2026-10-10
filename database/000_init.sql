@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-018.
--- New/empty database: run this file only. Do NOT run 001-018 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-019.
+-- New/empty database: run this file only. Do NOT run 001-019 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -128,7 +128,6 @@ CREATE TABLE IF NOT EXISTS debts (
     source_bank_name VARCHAR(100),
     source_account_number_masked VARCHAR(30),
     installment_count INTEGER NOT NULL DEFAULT 0,
-    installment_amounts JSON NOT NULL DEFAULT '[]',
     interest_type VARCHAR(20) NOT NULL,
     interest_rate NUMERIC(5, 2) NOT NULL,
     notes VARCHAR(2000) NOT NULL DEFAULT '',
@@ -143,6 +142,15 @@ CREATE TABLE IF NOT EXISTS debts (
     CONSTRAINT ck_debt_due_date CHECK (due_date IS NULL OR due_date >= transaction_date)
 );
 CREATE INDEX IF NOT EXISTS ix_debts_user_id ON debts(user_id);
+
+CREATE TABLE IF NOT EXISTS debt_installments (
+    debt_id UUID NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL,
+    amount NUMERIC(18, 0) NOT NULL,
+    PRIMARY KEY (debt_id, sequence),
+    CONSTRAINT ck_debt_installment_sequence CHECK (sequence BETWEEN 1 AND 60),
+    CONSTRAINT ck_debt_installment_amount CHECK (amount > 0 AND amount <= 1000000000000)
+);
 
 CREATE TABLE IF NOT EXISTS debt_payments (
     id UUID PRIMARY KEY,
@@ -393,11 +401,15 @@ CREATE TABLE IF NOT EXISTS transaction_imports (
 DO $$
 DECLARE required_column RECORD;
 BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
+        AND table_name = 'debts' AND column_name = 'installment_amounts') THEN
+        RAISE EXCEPTION 'Struktur debts lama: jalankan migration 019 sebelum memakai baseline terbaru.';
+    END IF;
     IF to_regclass('billing_platform_types') IS NOT NULL OR EXISTS (
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 018.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 019.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('savings', 'opening_amount'),
@@ -416,20 +428,20 @@ BEGIN
         ('saving_movements', 'request_id'),
         ('wallet_providers', 'bank_f'),
         ('debts', 'source_bank_account_id'),
-        ('debts', 'installment_amounts'),
         ('debts', 'installment_count'),
         ('billing_transactions', 'transaction_date'),
         ('billing_transactions', 'transaction_kind'),
         ('billing_transactions', 'stopped_on'),
         ('billing_transactions', 'recurring_billing_day'),
         ('billing_transactions', 'recurring_due_day'),
+        ('debt_installments', 'amount'),
         ('billing_installments', 'charged_on')
     ) AS required(table_name, column_name)
     LOOP
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 018.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 019.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
@@ -438,7 +450,7 @@ END $$;
 DO $$
 BEGIN
     IF current_setting('finance_tracker.reset')::boolean THEN
-        TRUNCATE TABLE ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debts, billing_installments, billing_transactions, billing_accounts, users
+        TRUNCATE TABLE ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
             RESTART IDENTITY;
     END IF;
 END $$;

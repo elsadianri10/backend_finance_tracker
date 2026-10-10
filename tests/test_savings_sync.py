@@ -1,10 +1,19 @@
 import unittest
+from datetime import date
+from unittest.mock import patch
 from uuid import uuid4
 import test_billing as fixture
 
 
 class SavingsSyncTests(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp = fixture.BillingTests.asyncSetUp
+    async def asyncSetUp(self):
+        await fixture.BillingTests.asyncSetUp(self)
+        # The undo/repay scenario takes place on the same synthetic day.
+        # Reversal dates otherwise follow the machine's date and invalidate
+        # the subsequent backdated payment as time passes.
+        clock = patch('app.services.savings_service.local_today', return_value=date(2026, 10, 9))
+        clock.start()
+        self.addCleanup(clock.stop)
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers
 

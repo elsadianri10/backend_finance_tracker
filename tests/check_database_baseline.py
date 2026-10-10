@@ -41,6 +41,8 @@ async def check():
             debt_id, debt_payment_id = uuid4(), uuid4()
             await db.execute("INSERT INTO debts(id,user_id,kind,person_name,principal,transaction_date,interest_type,interest_rate) VALUES($1,$2,'DEBT','Synthetic',1000,'2026-10-01','NONE',0)",debt_id,user)
             await db.execute("INSERT INTO debt_payments(id,debt_id,request_id,sequence,amount,payment_date) VALUES($1,$2,$3,1,500,'2026-10-02')",debt_payment_id,debt_id,uuid4())
+            await db.execute("UPDATE debts SET installment_count=2,due_date='2026-11-01' WHERE id=$1", debt_id)
+            await db.execute("INSERT INTO debt_installments(debt_id,sequence,amount) VALUES($1,1,333),($1,2,667)", debt_id)
             await db.execute("INSERT INTO bank_accounts(id,user_id,platform_id,account_number_encrypted,card_number_encrypted,valid_thru,admin_fee,others_fee) VALUES($1,$2,1,'synthetic-account-ciphertext','synthetic-card-ciphertext','2029-07',15000,0)",uuid4(),user)
             await db.execute("INSERT INTO split_bill_groups(id,user_id,name,start_date,end_date,version) VALUES($1,$2,'Synthetic','2026-10-01','2026-10-31',1)",uuid4(),user)
             saving_id = uuid4()
@@ -57,6 +59,7 @@ async def check():
             assert await db.fetchval('SELECT COUNT(*) FROM saving_movements') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM bank_accounts') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM debt_payments') == 1
+            assert await db.fetchval('SELECT COUNT(*) FROM debt_installments') == 2
             assert await db.fetchval('SELECT COUNT(*) FROM users') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM billing_installments') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM wallet_providers') == 7
@@ -76,6 +79,7 @@ async def check():
             await db.execute("INSERT INTO wallet_providers(id,name,is_active) VALUES(99,'Custom Platform',false)")
             platforms_before = await db.fetch('SELECT * FROM wallet_providers ORDER BY id')
             await db.execute(reset)
+            assert await db.fetchval('SELECT COUNT(*) FROM debt_installments') == 0
             for table in ('ledger_transactions', 'routine_payments', 'routine_plans', 'transaction_imports', 'split_bill_shares', 'split_bill_items', 'split_bill_expenses', 'split_bill_participants', 'split_bill_groups', 'saving_movements', 'savings', 'bank_accounts', 'users', 'billing_accounts', 'billing_transactions', 'billing_installments', 'debts', 'debt_payments'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
             assert await db.fetch('SELECT * FROM wallet_providers ORDER BY id') == platforms_before

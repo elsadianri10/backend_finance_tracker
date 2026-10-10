@@ -156,6 +156,11 @@ async def owned(group_id, user_id, db, lock=False):
     return item
 
 
+async def delete_group(group_id, user_id, db):
+    await db.delete(await owned(group_id, user_id, db, True))
+    await db.commit()
+
+
 async def list_groups(user_id, db):
     rows = await db.scalars(select(SplitBillGroup).where(SplitBillGroup.user_id == user_id).order_by(SplitBillGroup.created_at.desc(), SplitBillGroup.id).with_for_update(read=True))
     return await responses(list(rows), db)

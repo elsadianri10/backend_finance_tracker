@@ -12,13 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.config.db_config import engine
-from app.routes import auth_router, version_router, billing_router
-from app.routes.debt_route import router as debt_router
-from app.routes.bank_account_route import router as bank_account_router
-from app.routes.savings_route import router as savings_router
-from app.routes.split_bill_route import router as split_bill_router
-from app.routes.routine_route import router as routine_router
-from app.routes.summary_route import router as summary_router
+from app.routes import (
+    auth_router, version_router, billing_router, debt_router, bank_account_router,
+    savings_router, split_bill_router, routine_router, summary_router,
+)
 
 
 def parse_origins(raw: str) -> list[str]:

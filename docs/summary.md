@@ -12,3 +12,5 @@
 - Bank fees are estimates recorded in account settings, not automatically posted expenses. Metal estimates use the last saved prices and identify missing prices.
 
 No schema migration, JSONB storage, financial backfill, or modification of user records is needed. Tests use synthetic in-memory SQLite only: `python -m unittest discover -s tests -p test_summary.py`. Frontend integration is covered in `npm run test:routines`.
+
+Performance update (2026-10-10): monthly ledger totals use one conditional SQL aggregate instead of loading all transaction objects. Payment options fetch the latest sequence for all owned subscriptions in one grouped query; the query count remains constant as subscription count increases. Routine payments are grouped by plan once before response construction. Vercel function region is configured as `sin1` (Singapore); redeploy the backend to activate it. No deployment latency measurements have been taken.

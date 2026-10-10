@@ -91,6 +91,8 @@ Catatan integrasi FE, contoh request/response, dan field kondisional: [docs/bill
 
 ## Pengujian
 
+Struktur endpoint mengikuti `Route -> Controller -> Service`: `app/routes` memakai decorator `@router.get`, `@router.post`, `@router.patch`, `@router.delete`, dan metode lainnya untuk mendaftarkan endpoint, mendeklarasikan parameter/dependency, lalu meneruskannya ke controller. `app/controllers` menangani respons HTTP dan memanggil service; `app/services` menjalankan aturan bisnis dan operasi data. Endpoint informasi versi cukup memakai controller karena tidak memerlukan operasi bisnis/database. Pertahankan pola ini untuk endpoint baru.
+
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v

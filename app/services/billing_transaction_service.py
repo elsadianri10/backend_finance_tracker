@@ -15,7 +15,7 @@ def month_date(first: date, offset: int, day: int) -> date:
     return date(year, month + 1, min(day, monthrange(year, month + 1)[1]))
 
 
-async def owned_account(account_id: UUID, user_id: UUID, db: AsyncSession):
+async def owned_account(account_id: UUID, user_id: UUID, db: AsyncSession) -> BillingAccount:
     account = await db.scalar(select(BillingAccount).where(BillingAccount.id == account_id, BillingAccount.user_id == user_id).with_for_update())
     if account is None:
         raise HTTPException(404, "Billing account not found")
@@ -41,19 +41,30 @@ def local_today():
     return datetime.now(timezone(timedelta(hours=7))).date()
 
 
-def subscription_due(item, charge):
-    if item.recurring_billing_day is None:
+def fixed_bill_days(account: BillingAccount) -> tuple[int, int]:
+    billing_day, due_day = account.billing_date, account.due_date
+    if billing_day is None or due_day is None:
+        raise HTTPException(409, "Fixed billing schedule is incomplete")
+    return billing_day, due_day
+
+
+def subscription_due(item: BillingTransaction, charge: date) -> date:
+    billing_day, due_day = item.recurring_billing_day, item.recurring_due_day
+    if billing_day is None:
         return charge
-    issue_offset = 1 if charge.day > item.recurring_billing_day else 0
-    due_offset = issue_offset + (1 if item.recurring_due_day <= item.recurring_billing_day else 0)
-    return month_date(charge, due_offset, item.recurring_due_day)
+    if due_day is None:
+        raise HTTPException(409, "Recurring billing schedule is incomplete")
+    issue_offset = 1 if charge.day > billing_day else 0
+    due_offset = issue_offset + (1 if due_day <= billing_day else 0)
+    return month_date(charge, due_offset, due_day)
 
 
-async def generate_subscription(item, db):
+async def generate_subscription(item: BillingTransaction, db: AsyncSession, latest: int | None = None):
     if item.transaction_kind != 'SUBSCRIPTION':
         return
     through = min(local_today(), item.stopped_on) if item.stopped_on else local_today()
-    latest = await db.scalar(select(BillingInstallment.sequence).where(BillingInstallment.transaction_id == item.id).order_by(BillingInstallment.sequence.desc()).limit(1)) or 0
+    if latest is None:
+        latest = await db.scalar(select(BillingInstallment.sequence).where(BillingInstallment.transaction_id == item.id).order_by(BillingInstallment.sequence.desc()).limit(1)) or 0
     offset = latest
     while True:
         anchor = item.transaction_date or item.first_installment
@@ -66,7 +77,7 @@ async def generate_subscription(item, db):
     await db.flush()
 
 
-async def response(item, db):
+async def response(item: BillingTransaction, db: AsyncSession):
     bills = (await db.scalars(select(BillingInstallment).where(BillingInstallment.transaction_id == item.id).order_by(BillingInstallment.sequence))).all()
     next_charge = None
     if item.transaction_kind == 'SUBSCRIPTION' and item.stopped_on is None:
@@ -88,11 +99,11 @@ async def create(account_id, payload: TransactionCreate, user_id, db):
     if payload.transaction_date is not None:
         transaction_date = payload.transaction_date
         if account.has_fixed_bill_date:
-            offset = 1 if transaction_date.day > account.billing_date else 0
-            first = month_date(transaction_date, offset, account.billing_date)
-            due_offset = 1 if account.due_date <= account.billing_date else 0
-            due_first = month_date(first, due_offset, account.due_date)
-            day = account.due_date
+            billing_day, day = fixed_bill_days(account)
+            offset = 1 if transaction_date.day > billing_day else 0
+            first = month_date(transaction_date, offset, billing_day)
+            due_offset = 1 if day <= billing_day else 0
+            due_first = month_date(first, due_offset, day)
             last = month_date(due_first, count - 1, day)
         else:
             first = due_first = transaction_date
@@ -104,10 +115,16 @@ async def create(account_id, payload: TransactionCreate, user_id, db):
     else:
         # Historical clients and existing schedules retain their original date semantics.
         first = payload.first_installment
+        if first is None:
+            raise HTTPException(422, "First installment date is required")
         last = month_date(first, count - 1, first.day)
-        if not subscription and (payload.last_installment.year, payload.last_installment.month) != (last.year, last.month):
-            raise HTTPException(422, [{"loc": ["body", "LastInstallment"], "msg": "Last month must match the selected tenor", "type": "value_error"}])
-        day = account.due_date if account.has_fixed_bill_date else first.day
+        if not subscription:
+            submitted_last = payload.last_installment
+            if submitted_last is None:
+                raise HTTPException(422, "Last installment date is required")
+            if (submitted_last.year, submitted_last.month) != (last.year, last.month):
+                raise HTTPException(422, [{"loc": ["body", "LastInstallment"], "msg": "Last month must match the selected tenor", "type": "value_error"}])
+        day = fixed_bill_days(account)[1] if account.has_fixed_bill_date else first.day
         due_first = month_date(first, 0, day)
     item = BillingTransaction(account_id=account_id, description=payload.description, tenor=payload.tenor,
                               transaction_kind=payload.transaction_kind, transaction_date=payload.transaction_date,
