@@ -11,6 +11,10 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-12
+
+- Split Bill: diskon nominal per pengeluaran dibagi rata ke seluruh peserta grup dengan pembulatan rupiah tepat, setelah service charge/pajak. Potongan tampil di ringkasan, rincian bill dan PDF. Total Akhir Struk tetap menjadi total final, dengan penyesuaian setelah diskon; bobot negatif/nol ditangani dan saldo/transfer tetap seimbang. Migration 020 menambah kolom BIGINT `discount` dengan CHECK/default 0, tanpa JSON/JSONB; baseline sampai 020. Diterapkan pada database proyek dengan backup dan perbandingan semua record, tanpa reset. Verifikasi: 11 tes Split Bill lolos, upgrade/constraint/ORM dan baseline init/reset diuji dalam schema PostgreSQL sintetis, PDF contoh 20 peserta diperiksa secara visual.
+
 ### 2026-10-10
 
 - Hutang/Piutang relasional: JSON `debts.installment_amounts` dipindahkan ke `debt_installments` dengan FK, primary key `(debt_id, sequence)`, nominal NUMERIC dan constraint urutan/nominal. API serta perhitungan tetap sama; ORM memuat cicilan secara berkelompok. Migration 019 memvalidasi data lama, memeriksa backfill, lalu menghapus kolom JSON secara atomik. Diterapkan ke database proyek dengan backup lokal di `.migration-backups`; seluruh record lama serta nominal/urutan cicilan identik dan schema aplikasi tidak lagi memiliki kolom JSON/JSONB. Baseline sampai 019. Verifikasi: 27 tes Hutang/Piutang, cicilan, sinkronisasi pembayaran, rutin dan Ringkasan lolos; upgrade/rollback invalid-data dan pembacaan saldo PostgreSQL diuji pada schema sintetis, serta init/reset sintetis mempertahankan dan mengosongkan rincian cicilan dengan benar. Database aplikasi tidak direset.

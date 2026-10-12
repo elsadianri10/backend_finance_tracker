@@ -47,6 +47,7 @@ class SplitBillExpense(Base):
         CheckConstraint("tax_mode IN ('AMOUNT','PERCENT') AND tax_value >= 0 AND tax_value <= 1000000000000 AND (tax_mode <> 'PERCENT' OR tax_value <= 100) AND (tax_mode <> 'AMOUNT' OR tax_value = round(tax_value))", name='ck_split_tax'),
         CheckConstraint("fee_allocation IN ('PROPORTIONAL','EQUAL','MIXED')", name='ck_split_fee_allocation'),
         CheckConstraint('receipt_total IS NULL OR receipt_total BETWEEN 0 AND 1000000000000', name='ck_split_receipt_total'),
+        CheckConstraint('discount BETWEEN 0 AND 1000000000000', name='ck_split_discount'),
     )
     group_id: Mapped[UUID] = mapped_column(ForeignKey('split_bill_groups.id', ondelete='CASCADE'), primary_key=True)
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -57,6 +58,7 @@ class SplitBillExpense(Base):
     service_value: Mapped[Decimal] = mapped_column(Numeric(15, 2))
     tax_mode: Mapped[str] = mapped_column(String(10))
     tax_value: Mapped[Decimal] = mapped_column(Numeric(15, 2))
+    discount: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default='0')
     tax_includes_service: Mapped[bool] = mapped_column(Boolean)
     fee_allocation: Mapped[str] = mapped_column(String(12))
     receipt_total: Mapped[int | None] = mapped_column(BigInteger)

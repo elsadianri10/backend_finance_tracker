@@ -27,3 +27,11 @@ Layout ekspor memakai alur berkelanjutan: bill tidak dipaksa mulai pada halaman 
 PDF portrait: ringkasan hasil peserta dan rincian biaya memakai tabel terpisah agar kolom terbaca. Bagian Daftar Pengeluaran / Transaksi ditampilkan setelah Saran Transfer sebelum bill pertama.
 
 Urutan ekspor: tabel peserta dan nama penerima diurutkan abjad (case-insensitive). Bill diurutkan berdasarkan ExpenseDate dari paling awal; tanggal yang sama mempertahankan urutan tersimpan. Di dalam setiap bill, item mengikuti nama penerima; item yang mencakup semua peserta ditempatkan terakhir. Sorting dilakukan pada salinan untuk tampilan PDF dan tidak mengubah urutan tersimpan maupun tie-break perhitungan.
+
+## Diskon (migration 020)
+
+`Expenses[].Discount` adalah nominal rupiah bulat 0–Rp 1 triliun, default 0 untuk data/client lama. Disimpan sebagai kolom BIGINT pada `split_bill_expenses`, tanpa JSON/JSONB. Diskon tidak boleh melebihi subtotal + service charge + pajak. Pajak/service charge dihitung lebih dulu dengan aturan yang sama; sesudahnya diskon dibagi rata ke seluruh peserta grup, termasuk peserta tanpa item pada bill tersebut. Selisih rupiah mengikuti urutan peserta. Peserta tanpa konsumsi dapat memiliki kredit (bagian negatif); saran transfer tetap menyeimbangkan semua saldo.
+
+Ringkasan/perhitungan memuat `Discount` positif sebagai potongan per peserta; UI/PDF menampilkannya dengan tanda minus. Total = Subtotal + ServiceCharge + Tax - Discount + Adjustment. Total Akhir Struk, bila diisi, tetap merupakan total pembayaran final; `BeforeAdjustment` sudah dikurangi diskon. Penyesuaian proporsional memakai bagian setelah diskon, atau bagian sebelum diskon bila terdapat kredit/seluruh bagian nol, agar bobot tidak negatif dan jumlah tetap tepat.
+
+Migration 020 hanya menambahkan kolom/constraint dengan default 0; tidak mengubah record lama. Jalankan upgrade ini pada database deployment sebelum deploy BE/FE baru. Jangan memakai baseline 000 untuk upgrade database berisi data.
