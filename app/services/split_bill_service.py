@@ -34,7 +34,7 @@ def calculate(payload):
         invalid(['Participants'], 'ID peserta harus unik')
     if len({p.name.casefold() for p in payload.participants}) != len(ids):
         invalid(['Participants'], 'Nama peserta harus berbeda agar mudah dibedakan')
-    summary = {key: {'ParticipantId': key, 'Subtotal': 0, 'ServiceCharge': 0, 'Tax': 0, 'Adjustment': 0, 'Total': 0, 'Paid': 0, 'Balance': 0} for key in ids}
+    summary = {key: {'ParticipantId': key, 'Subtotal': 0, 'ServiceCharge': 0, 'Tax': 0, 'Discount': 0, 'Adjustment': 0, 'Total': 0, 'Paid': 0, 'Balance': 0} for key in ids}
     expense_results = []
     seen_expenses = set()
     for index, expense in enumerate(payload.expenses):
@@ -72,6 +72,10 @@ def calculate(payload):
         total = subtotal + service + tax
         if total > 1000000000000:
             invalid(path + ['Items'], 'Total pengeluaran maksimal Rp 1 triliun')
+        if expense.discount > total:
+            invalid(path + ['Discount'], 'Diskon tidak boleh melebihi subtotal + service charge + pajak')
+        total -= expense.discount
+        discounts = allocate(expense.discount, dict.fromkeys(ids, 1))
         weights = {key: amount if expense.fee_allocation == 'PROPORTIONAL' else 1 for key, amount in subtotals.items() if amount > 0}
         if mixed:
             services = allocate(service, dict.fromkeys(ids, 1))
@@ -79,20 +83,30 @@ def calculate(payload):
         else:
             services, taxes = allocate(service, weights), allocate(tax, weights)
         before_adjustment = total
-        base_parts = {key: subtotals[key] + services.get(key, 0) + taxes.get(key, 0) for key in ids}
+        gross_parts = {key: subtotals[key] + services.get(key, 0) + taxes.get(key, 0) for key in ids}
+        base_parts = {key: gross_parts[key] - discounts[key] for key in ids}
         if expense.receipt_total is not None:
             total = expense.receipt_total
-        final_parts = allocate(total, base_parts) if total != before_adjustment else base_parts
+        final_parts = base_parts
+        if total != before_adjustment:
+            if all(amount >= 0 for amount in base_parts.values()) and sum(base_parts.values()) > 0:
+                final_parts = allocate(total, base_parts)
+            else:
+                # Equal discounts can credit participants without consumption.
+                # Never use negative weights or lose a nonzero receipt adjustment.
+                adjustments = allocate(abs(total - before_adjustment), gross_parts)
+                sign = 1 if total > before_adjustment else -1
+                final_parts = {key: base_parts[key] + sign * adjustments[key] for key in ids}
         parts = []
         for key in ids:
-            part = {'ParticipantId': key, 'Subtotal': subtotals[key], 'ServiceCharge': services.get(key, 0), 'Tax': taxes.get(key, 0)}
+            part = {'ParticipantId': key, 'Subtotal': subtotals[key], 'ServiceCharge': services.get(key, 0), 'Tax': taxes.get(key, 0), 'Discount': discounts[key]}
             part['Adjustment'] = final_parts[key] - base_parts[key]
             part['Total'] = final_parts[key]
             parts.append(part)
-            for field in ('Subtotal', 'ServiceCharge', 'Tax', 'Adjustment', 'Total'):
+            for field in ('Subtotal', 'ServiceCharge', 'Tax', 'Discount', 'Adjustment', 'Total'):
                 summary[key][field] += part[field]
         summary[payer]['Paid'] += total
-        expense_results.append({'Id': str(expense.id), 'Subtotal': subtotal, 'ServiceCharge': service, 'Tax': tax, 'BeforeAdjustment': before_adjustment, 'Adjustment': total - before_adjustment, 'Total': total, 'Participants': parts})
+        expense_results.append({'Id': str(expense.id), 'Subtotal': subtotal, 'ServiceCharge': service, 'Tax': tax, 'Discount': expense.discount, 'BeforeAdjustment': before_adjustment, 'Adjustment': total - before_adjustment, 'Total': total, 'Participants': parts})
     total = sum(row['Total'] for row in summary.values())
     if total > 1000000000000:
         invalid(['Expenses'], 'Total grup maksimal Rp 1 triliun')
@@ -127,7 +141,7 @@ async def responses(groups, db):
         data = {'Id': expense.id, 'Name': expense.name, 'ExpenseDate': expense.expense_date, 'PaidBy': expense.paid_by,
                 'ServiceCharge': {'Mode': expense.service_mode, 'Value': expense.service_value},
                 'Tax': {'Mode': expense.tax_mode, 'Value': expense.tax_value}, 'TaxIncludesService': expense.tax_includes_service,
-                'FeeAllocation': expense.fee_allocation, 'ReceiptTotal': expense.receipt_total, 'Notes': expense.notes, 'Items': []}
+                'FeeAllocation': expense.fee_allocation, 'Discount': expense.discount, 'ReceiptTotal': expense.receipt_total, 'Notes': expense.notes, 'Items': []}
         expenses[(expense.group_id, expense.id)] = data
         documents[expense.group_id]['Expenses'].append(data)
     items = {}
@@ -188,7 +202,7 @@ async def save(payload, user_id, db, group_id=None):
         expenses.append({'group_id': item.id, 'id': expense.id, 'name': expense.name, 'expense_date': expense.expense_date,
                          'paid_by': expense.paid_by, 'service_mode': expense.service_charge.mode, 'service_value': expense.service_charge.value,
                          'tax_mode': expense.tax.mode, 'tax_value': expense.tax.value, 'tax_includes_service': expense.tax_includes_service,
-                         'fee_allocation': expense.fee_allocation, 'receipt_total': expense.receipt_total, 'notes': expense.notes, 'position': position})
+                         'fee_allocation': expense.fee_allocation, 'discount': expense.discount, 'receipt_total': expense.receipt_total, 'notes': expense.notes, 'position': position})
         for item_position, bill_item in enumerate(expense.items):
             items.append({'group_id': item.id, 'expense_id': expense.id, 'id': bill_item.id, 'name': bill_item.name,
                           'amount': bill_item.amount, 'split_mode': bill_item.split_mode, 'position': item_position})

@@ -17,6 +17,52 @@ def expense(body, amount=100000, members=None, payer=0):
 
 
 class CalculationTests(unittest.TestCase):
+    def test_discount_equal_all_with_rounding_and_receipt_override(self):
+        body = example(3)
+        bill = expense(body, 10000, [0, 1])
+        bill['Discount'] = 1001
+        body['Expenses'] = [bill]
+        result = calculate(GroupCreate.model_validate(body))
+        self.assertEqual([p['Discount'] for p in result['Participants']], [334, 334, 333])
+        self.assertEqual([p['Total'] for p in result['Participants']], [4666, 4666, -333])
+        self.assertEqual(result['Total'], 8999)
+        self.assertEqual(sum(p['Balance'] for p in result['Participants']), 0)
+        self.assertEqual(result['Expenses'][0]['BeforeAdjustment'], 8999)
+        for target in (0, 8990, 9100):
+            bill['ReceiptTotal'] = target
+            adjusted = calculate(GroupCreate.model_validate(body))
+            self.assertEqual(sum(p['Total'] for p in adjusted['Participants']), target)
+            self.assertEqual(sum(p['Discount'] for p in adjusted['Participants']), 1001)
+            self.assertEqual(sum(p['Adjustment'] for p in adjusted['Participants']), target - 8999)
+            balances = {p['ParticipantId']: p['Balance'] for p in adjusted['Participants']}
+            for transfer in adjusted['Transfers']:
+                balances[transfer['FromParticipantId']] += transfer['Amount']
+                balances[transfer['ToParticipantId']] -= transfer['Amount']
+            self.assertTrue(all(value == 0 for value in balances.values()))
+
+    def test_discount_does_not_change_tax_and_handles_full_discount(self):
+        body = example(2)
+        bill = expense(body, 10000)
+        bill['ServiceCharge'] = {'Mode': 'AMOUNT', 'Value': 1000}
+        bill['Tax'] = {'Mode': 'PERCENT', 'Value': 10}
+        bill['Discount'] = 1000
+        body['Expenses'] = [bill]
+        result = calculate(GroupCreate.model_validate(body))
+        self.assertEqual(result['Expenses'][0]['Tax'], 1000)
+        self.assertEqual(result['Total'], 11000)
+        bill['Discount'] = 12000
+        self.assertEqual(calculate(GroupCreate.model_validate(body))['Total'], 0)
+        bill['ReceiptTotal'] = 5
+        self.assertEqual(calculate(GroupCreate.model_validate(body))['Total'], 5)
+        bill['Discount'] = 12001
+        with self.assertRaises(HTTPException):
+            calculate(GroupCreate.model_validate(body))
+        from pydantic import ValidationError
+        for value in (-1, True, 1.5, 1000000000001):
+            bill['Discount'] = value
+            with self.assertRaises(ValidationError):
+                GroupCreate.model_validate(body)
+
     def test_service_equal_all_and_tax_from_consumption_plus_service(self):
         body = example(3)
         bill = expense(body, 100000, [0, 1])
@@ -124,6 +170,26 @@ class CalculationTests(unittest.TestCase):
 
 
 class SplitBillApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_discount_roundtrip_edit_and_pdf(self):
+        body = example(3)
+        bill = expense(body, 10000)
+        bill['Discount'] = 1001
+        body['Expenses'] = [bill]
+        created = await self.client.post('/split-bills', headers=self.headers, json=body)
+        self.assertEqual(created.status_code, 201, created.text)
+        result = created.json()
+        path = '/split-bills/' + result['Id']
+        self.assertEqual(result['Expenses'][0]['Discount'], 1001)
+        self.assertEqual(result['Calculation']['Total'], 8999)
+        self.assertEqual((await self.client.get(path, headers=self.headers)).json(), result)
+        bill['Discount'] = 0
+        edited = await self.client.patch(path, headers=self.headers, json=body | {'Version': 1})
+        self.assertEqual(edited.status_code, 200, edited.text)
+        self.assertEqual(edited.json()['Calculation']['Total'], 10000)
+        pdf = await self.client.get(path + '/export', headers=self.headers)
+        self.assertEqual(pdf.status_code, 200, pdf.text if pdf.status_code != 200 else '')
+        self.assertTrue(pdf.content.startswith(b'%PDF'))
+
     asyncSetUp = fixture.BillingTests.asyncSetUp
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers

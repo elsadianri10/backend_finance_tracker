@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-019.
--- New/empty database: run this file only. Do NOT run 001-019 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-020.
+-- New/empty database: run this file only. Do NOT run 001-020 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS split_bill_expenses (
 	service_value NUMERIC(15, 2) NOT NULL,
 	tax_mode VARCHAR(10) NOT NULL,
 	tax_value NUMERIC(15, 2) NOT NULL,
+    discount BIGINT NOT NULL DEFAULT 0,
 	tax_includes_service BOOLEAN NOT NULL,
 	fee_allocation VARCHAR(12) NOT NULL,
 	receipt_total BIGINT,
@@ -258,6 +259,7 @@ CREATE TABLE IF NOT EXISTS split_bill_expenses (
 	CONSTRAINT ck_split_expense_position CHECK (position BETWEEN 0 AND 99),
 	CONSTRAINT ck_split_expense_name CHECK (length(trim(name)) > 0),
 	CONSTRAINT ck_split_service CHECK (service_mode IN ('AMOUNT','PERCENT') AND service_value >= 0 AND service_value <= 1000000000000 AND (service_mode <> 'PERCENT' OR service_value <= 100) AND (service_mode <> 'AMOUNT' OR service_value = round(service_value))),
+	CONSTRAINT ck_split_discount CHECK (discount BETWEEN 0 AND 1000000000000),
 	CONSTRAINT ck_split_tax CHECK (tax_mode IN ('AMOUNT','PERCENT') AND tax_value >= 0 AND tax_value <= 1000000000000 AND (tax_mode <> 'PERCENT' OR tax_value <= 100) AND (tax_mode <> 'AMOUNT' OR tax_value = round(tax_value))),
 	CONSTRAINT ck_split_fee_allocation CHECK (fee_allocation IN ('PROPORTIONAL','EQUAL','MIXED')),
 	CONSTRAINT ck_split_receipt_total CHECK (receipt_total IS NULL OR receipt_total BETWEEN 0 AND 1000000000000),
@@ -409,7 +411,7 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 019.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 020.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('savings', 'opening_amount'),
@@ -422,6 +424,7 @@ BEGIN
         ('ledger_transactions', 'kind'),
         ('split_bill_groups', 'version'),
         ('split_bill_groups', 'name'),
+        ('split_bill_expenses', 'discount'),
         ('split_bill_shares', 'participant_id'),
         ('billing_accounts', 'monthly_fee'),
         ('billing_accounts', 'payment_fee'),
@@ -441,7 +444,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 019.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 020.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;

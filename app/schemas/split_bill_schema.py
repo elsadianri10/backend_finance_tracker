@@ -59,6 +59,7 @@ class Expense(PascalModel):
     items: list[BillItem] = Field(min_length=1, max_length=100)
     service_charge: Charge = Field(default_factory=lambda: Charge())
     tax: Charge = Field(default_factory=lambda: Charge())
+    discount: int = Field(default=0, strict=True, ge=0, le=1000000000000)
     tax_includes_service: StrictBool = True
     fee_allocation: Literal['PROPORTIONAL', 'EQUAL', 'MIXED'] = 'MIXED'
     receipt_total: int | None = Field(default=None, strict=True, ge=0, le=1000000000000)

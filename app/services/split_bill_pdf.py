@@ -72,7 +72,7 @@ def export_pdf(group):
         rows.append([names[part['ParticipantId']], money(part['Total']), money(part['Paid']), ('Menerima ' if balance > 0 else 'Membayar ') + money(abs(balance)) if balance else 'Seimbang'])
     table(['Peserta', 'Total Bagian', 'Dibayarkan', 'Saldo Akhir'], rows, [1.4, 1.2, 1.2, 1.7])
     story.append(p('Rincian konsumsi dan biaya:'))
-    table(['Peserta', 'Subtotal', 'Service Charge', 'Pajak', 'Penyesuaian Struk'], [[names[r['ParticipantId']], money(r['Subtotal']), money(r['ServiceCharge']), money(r['Tax']), money(r.get('Adjustment', 0))] for r in participants], [1.5, 1.2, 1.2, 1.2, 1.2])
+    table(['Peserta', 'Subtotal', 'Service Charge', 'Pajak', 'Diskon', 'Penyesuaian Struk'], [[names[r['ParticipantId']], money(r['Subtotal']), money(r['ServiceCharge']), money(r['Tax']), money(-r.get('Discount', 0)), money(r.get('Adjustment', 0))] for r in participants], [1.5, 1.2, 1.2, 1.2, 1.2, 1.2])
     story.extend([CondPageBreak(90), p('Saran Transfer', heading)])
     if result['Transfers']:
         table(['Dari', 'Kepada', 'Nominal'], [[names[t['FromParticipantId']], names[t['ToParticipantId']], money(t['Amount'])] for t in sorted(result['Transfers'], key=lambda row: (names[row['FromParticipantId']].casefold(), names[row['ToParticipantId']].casefold()))], [2, 2, 1])
@@ -93,7 +93,9 @@ def export_pdf(group):
                 shares = f'Semua peserta ({len(names)})'
             rows.append([item['Name'], money(item['Amount']), 'Rata' if item['SplitMode'] == 'EQUAL' else 'Nominal berbeda', shares])
         table(['Item / Menu', 'Harga Total', 'Pembagian', 'Untuk Peserta'], rows, [3, 1.3, 1.4, 3])
-        story.append(p(f"Subtotal: {money(calc['Subtotal'])} | Service charge: {money(calc['ServiceCharge'])} | Pajak: {money(calc['Tax'])}"))
+        story.append(p(f"Subtotal: {money(calc['Subtotal'])} | Service charge: {money(calc['ServiceCharge'])} | Pajak: {money(calc['Tax'])} | Diskon: {money(-calc.get('Discount', 0))}"))
+        if calc.get('Discount', 0):
+            story.append(p('Diskon dibagi rata ke seluruh peserta grup setelah service charge dan pajak.'))
         modes = {'MIXED': 'Service charge rata ke semua peserta; pajak sesuai konsumsi + bagian service charge.', 'EQUAL': 'Biaya tambahan rata ke peserta dengan konsumsi.', 'PROPORTIONAL': 'Biaya tambahan sesuai porsi konsumsi.'}
         story.append(p(modes[expense['FeeAllocation']]))
         if expense.get('ReceiptTotal') is not None:
@@ -101,7 +103,7 @@ def export_pdf(group):
         if expense.get('Notes'):
             story.append(p('Notes: ' + expense['Notes']))
         story.append(Spacer(1, 4))
-        table(['Peserta', 'Konsumsi', 'Service Charge', 'Pajak', 'Penyesuaian', 'Total'], [[names[r['ParticipantId']], money(r['Subtotal']), money(r['ServiceCharge']), money(r['Tax']), money(r.get('Adjustment', 0)), money(r['Total'])] for r in sorted(calc['Participants'], key=participant_key)], [1.5, 1, 1, 1, 1, 1.2])
+        table(['Peserta', 'Konsumsi', 'Service Charge', 'Pajak', 'Diskon', 'Selisih Struk', 'Total'], [[names[r['ParticipantId']], money(r['Subtotal']), money(r['ServiceCharge']), money(r['Tax']), money(-r.get('Discount', 0)), money(r.get('Adjustment', 0)), money(r['Total'])] for r in sorted(calc['Participants'], key=participant_key)], [1.5, 1, 1, 1, 1, 1, 1.2])
 
     def footer(canvas, doc):
         canvas.saveState()
