@@ -13,6 +13,8 @@
 
 ### 2026-10-12
 
+- Keamanan Passkey: pendaftaran/penghapusan di Profil Saya, Google → sesi sementara → verifikasi WebAuthn wajib untuk akun aktif-passkey, dan kode pemulihan sekali pakai. Signature/origin/RP/UV/counter diverifikasi `webauthn==2.8.0`; challenge purpose-bound/sekali pakai/kedaluwarsa, lock dan pembatasan percobaan, HMAC kode pemulihan, serta versi sesi mencegah bypass Google/replay/sesi lama. Passkey terakhir dilindungi; perubahan keamanan memerlukan verifikasi baru. Migration 021 additive/relasional, baseline sampai 021, diterapkan pada database proyek dengan backup dan seluruh record lama identik. 96 tes backend lolos pada suite penuh, dan enam tes passkey final lolos termasuk signature rusak/verifikasi ulang dengan authenticator sintetis; upgrade dan init/reset hanya diuji di schema sintetis. Konfigurasi RP produksi memakai domain frontend yang diberikan pengguna; local memakai localhost. Belum mendaftarkan passkey pada perangkat fisik pengguna.
+
 - Split Bill: diskon nominal per pengeluaran dibagi rata ke seluruh peserta grup dengan pembulatan rupiah tepat, setelah service charge/pajak. Potongan tampil di ringkasan, rincian bill dan PDF. Total Akhir Struk tetap menjadi total final, dengan penyesuaian setelah diskon; bobot negatif/nol ditangani dan saldo/transfer tetap seimbang. Migration 020 menambah kolom BIGINT `discount` dengan CHECK/default 0, tanpa JSON/JSONB; baseline sampai 020. Diterapkan pada database proyek dengan backup dan perbandingan semua record, tanpa reset. Verifikasi: 11 tes Split Bill lolos, upgrade/constraint/ORM dan baseline init/reset diuji dalam schema PostgreSQL sintetis, PDF contoh 20 peserta diperiksa secara visual.
 
 ### 2026-10-10

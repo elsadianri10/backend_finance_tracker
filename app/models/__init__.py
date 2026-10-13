@@ -1,4 +1,5 @@
 from .base_model import Base
+from .passkey_model import Passkey, PasskeyChallenge, RecoveryCode
 from .user_model import User
 from .billing_model import BillingAccount, BillingPlatform, WalletProvider
 from .billing_transaction_model import BillingTransaction, BillingInstallment
@@ -10,6 +11,7 @@ from .split_bill_model import SplitBillGroup, SplitBillParticipant, SplitBillExp
 from .routine_model import RoutinePlan, RoutinePayment, LedgerTransaction, TransactionImport
 
 __all__ = [
+    "Passkey", "PasskeyChallenge", "RecoveryCode",
     "Base", "User", "WalletProvider", "BillingPlatform", "BillingAccount",
     "BillingTransaction", "BillingInstallment", "BankAccount", "Debt", "DebtPayment", "DebtInstallment",
     "Saving", "SavingMovement", "SplitBillGroup", "SplitBillParticipant",

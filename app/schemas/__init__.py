@@ -4,7 +4,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 from .base_schema import PascalModel
-from .auth_schema import GoogleLoginRequest, UserResponse, LoginResponse
+from .auth_schema import GoogleLoginRequest, UserResponse, LoginResponse, PendingLoginResponse
 from .bank_account_schema import BankAccountCreate, BankAccountUpdate, BankAccountResponse, WalletProviderResponse
 from .billing_schema import PlatformType, BillingAccountCreate, BillingPlatformResponse, BillingAccountUpdate, BillingAccountResponse
 from .billing_transaction_schema import TransactionCreate, LastAmountUpdate, InstallmentResponse as BillingInstallmentResponse, TransactionResponse
@@ -14,6 +14,7 @@ from .savings_schema import SavingCreate, MovementCreate, MovementResponse, Savi
 from .split_bill_schema import Participant, ItemShare, BillItem, Charge, Expense, GroupCreate, GroupUpdate
 
 if TYPE_CHECKING:
+    from . import passkey_schema
     from . import (
         auth_schema,
         bank_account_schema,
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "passkey_schema",
     'auth_schema',
     'bank_account_schema',
     'base_schema',
@@ -40,6 +42,7 @@ __all__ = [
     'GoogleLoginRequest',
     'UserResponse',
     'LoginResponse',
+    'PendingLoginResponse',
     'BankAccountCreate',
     'BankAccountUpdate',
     'BankAccountResponse',

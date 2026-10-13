@@ -1,3 +1,4 @@
+from .passkey_route import router as passkey_router
 from .version_route import router as version_router
 from .auth_route import router as auth_router
 from .billing_route import router as billing_router
@@ -9,6 +10,7 @@ from .split_bill_route import router as split_bill_router
 from .summary_route import router as summary_router
 
 __all__ = [
+    "passkey_router",
     "version_router", "auth_router", "billing_router", "bank_account_router",
     "debt_router", "routine_router", "savings_router", "split_bill_router", "summary_router",
 ]

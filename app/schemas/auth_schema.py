@@ -20,3 +20,9 @@ class LoginResponse(PascalModel):
     token_type: str
     expires_in: int
     user: UserResponse
+
+
+class PendingLoginResponse(PascalModel):
+    passkey_required: bool = True
+    pending_token: str
+    expires_in: int
