@@ -37,22 +37,29 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_xlsx_numeric_dates_formulas_cache_and_no_formula_injection(self):
         rows, _ = await self.seed()
-        result = await self.client.post('/transactions/export/xlsx', headers=self.headers, json=self.payload(rows))
+        result = await self.client.post('/transactions/export/xlsx', headers=self.headers, json=self.payload(list(reversed(rows))))
         self.assertEqual(result.status_code, 200, result.text if result.status_code != 200 else '')
         self.assertEqual(result.headers['cache-control'], 'no-store')
         wb = load_workbook(BytesIO(result.content))
         ws = wb.active
-        self.assertEqual(ws['A13'].value.date(), date(2026, 10, 5))
-        self.assertEqual(ws['E13'].value, 300000)
+        self.assertEqual([ws.cell(index, 1).value.date() for index in range(13, 18)], [row.transaction_date for row in rows])
+        self.assertEqual(ws['E13'].value, 1000000)
+        self.assertEqual(ws['E14'].value, -25000)
+        self.assertEqual(ws['E13'].font.color.rgb, '0015803D')
+        self.assertEqual(ws['D14'].font.color.rgb, '00B91C1C')
+        self.assertEqual(ws['E14'].font.color.rgb, '00B91C1C')
         self.assertEqual(ws['E13'].data_type, 'n')
-        self.assertEqual(ws['B16'].value, '=HYPERLINK("https://example.test")')
-        self.assertEqual(ws['B16'].data_type, 's')
+        self.assertEqual(ws['B14'].value, '=HYPERLINK("https://example.test")')
+        self.assertEqual(ws['B14'].data_type, 's')
         self.assertEqual(ws['H13'].data_type, 's')
         self.assertEqual(ws.freeze_panes, 'C13')
         self.assertIn('Transactions', ws.tables)
         self.assertEqual(ws['B6'].data_type, 'f')
+        self.assertEqual(ws['H6'].value, '=B6+B7+E6')
         cached = load_workbook(BytesIO(result.content), data_only=True).active
-        self.assertEqual([cached[cell].value for cell in ('B6', 'E6', 'H6', 'B7', 'E7', 'H7')], totals(rows))
+        expected = totals(rows)
+        expected[1] = -expected[1]
+        self.assertEqual([cached[cell].value for cell in ('B6', 'E6', 'H6', 'B7', 'E7', 'H7')], expected)
         self.assertEqual(cached['H6'].value, 1075000)
         self.assertEqual(len(list(ws.rows)), 17)
 

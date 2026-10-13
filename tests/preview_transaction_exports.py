@@ -16,7 +16,7 @@ for index in range(35):
         transaction_date=date(2026, 10, 13-index % 10), description='Contoh transaksi ' + str(index+1),
         notes='Catatan contoh untuk pemeriksaan tata letak laporan.' if index % 3 == 0 else '',
         source_label='BCA Digital (BLU) · ********6201', destination_label='Tunai / Tidak dicatat'))
-rows.sort(key=lambda row: row.transaction_date, reverse=True)
+rows.sort(key=lambda row: row.transaction_date)
 payload = TransactionExportInput.model_validate({'Month': '2026-10', 'TransactionIds': [str(row.id) for row in rows]})
 root = Path(sys.argv[1])
 root.mkdir(exist_ok=True, parents=True)

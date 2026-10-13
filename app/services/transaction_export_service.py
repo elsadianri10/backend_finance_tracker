@@ -62,13 +62,14 @@ async def load(payload: TransactionExportInput, user_id, db):
             or payload.search.lower() not in (row.description + ' ' + category).lower()):
             raise HTTPException(409, 'Filter transaksi berubah. Muat ulang sebelum mengekspor.')
     positions = {key: index for index, key in enumerate(payload.transaction_ids)}
-    return sorted(rows, key=lambda row: (-row.transaction_date.toordinal(), positions[row.id]))
+    return sorted(rows, key=lambda row: (row.transaction_date.toordinal(), positions[row.id]))
 
 
 def excel(rows, payload, name):
     # Application exports run in Python/Vercel using the existing openpyxl dependency.
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.formatting.rule import CellIsRule
     from openpyxl.worksheet.table import Table, TableStyleInfo
     from openpyxl.worksheet.worksheet import Worksheet
     from openpyxl.worksheet.properties import PageSetupProperties
@@ -94,20 +95,23 @@ def excel(rows, payload, name):
     formulas = [
         ('A6', 'Pendapatan', 'B6', f'=SUMIFS({amount},{kind},"Pemasukan",{category},"<>Tarik Tunai",{category},"<>Pengembalian Piutang")'),
         ('D6', 'Pengeluaran', 'E6', f'=SUMIF({kind},"Pengeluaran",{amount})'),
-        ('G6', 'Arus Kas Bersih', 'H6', '=B6+B7-E6'),
+        ('G6', 'Arus Kas Bersih', 'H6', '=B6+B7+E6'),
         ('A7', 'Pengembalian Piutang', 'B7', f'=SUMIFS({amount},{kind},"Pemasukan",{category},"Pengembalian Piutang")'),
         ('D7', 'Transfer Antar Rekening', 'E7', f'=SUMIF({kind},"Transfer Antar Rekening",{amount})'),
         ('G7', 'Tarik Tunai', 'H7', f'=SUMIFS({amount},{kind},"Pemasukan",{category},"Tarik Tunai")'),
     ]
     for label_cell, label, value_cell, formula in formulas:
         text(ws[label_cell], label)
-        ws[label_cell].font = Font(name='Arial', bold=True, color='334155')
+        color = '15803D' if value_cell in ('B6', 'B7') else 'B91C1C' if value_cell == 'E6' else '334155'
+        ws[label_cell].font = Font(name='Arial', bold=True, color=color)
         ws[label_cell].alignment = Alignment(wrap_text=True, vertical='center')
         ws.row_dimensions[ws[label_cell].row].height = 32
         ws[value_cell] = formula
         ws[value_cell].number_format = '"Rp "#,##0;[Red]-"Rp "#,##0'
-        ws[value_cell].font = Font(name='Arial', bold=True, color='0F172A')
+        ws[value_cell].font = Font(name='Arial', bold=True, color=color)
         ws[value_cell].alignment = Alignment(horizontal='right', vertical='center', indent=1)
+    for operator, color in [('greaterThan', '15803D'), ('lessThan', 'B91C1C')]:
+        ws.conditional_formatting.add('H6', CellIsRule(operator=operator, formula=['0'], font=Font(color=color)))
     for column, header in enumerate(HEADERS, 1):
         text(ws.cell(12, column), header)
         ws.cell(12, column).font = Font(name='Arial', bold=True, color='FFFFFF')
@@ -118,7 +122,7 @@ def excel(rows, payload, name):
         ws.column_dimensions[get_column_letter(column)].width = width
     for index, row in enumerate(rows, 13):
         values = [row.transaction_date, row.description, CATEGORIES.get(row.category, row.category), KINDS[row.kind],
-                  int(row.amount), row.source_label or 'Tunai / Tidak dicatat', row.destination_label or 'Tunai / Tidak dicatat', row.notes]
+                  -abs(int(row.amount)) if row.kind == 'expense' else int(row.amount), row.source_label or 'Tunai / Tidak dicatat', row.destination_label or 'Tunai / Tidak dicatat', row.notes]
         for column, value in enumerate(values, 1):
             cell = ws.cell(index, column)
             if column in (1, 5):
@@ -126,7 +130,8 @@ def excel(rows, payload, name):
             else:
                 text(cell, value)
             cell.alignment = Alignment(horizontal='right' if column == 5 else 'left', vertical='top', indent=1, wrap_text=column not in (1, 5))
-            cell.font = Font(name='Arial', size=11)
+            color = ('15803D' if row.kind == 'income' else 'B91C1C' if row.kind == 'expense' else '334155') if column in (4, 5) else '334155'
+            cell.font = Font(name='Arial', size=11, bold=column in (4, 5), color=color)
         ws.cell(index, 1).number_format = 'dd-mm-yyyy'
         ws.cell(index, 5).number_format = '"Rp "#,##0;[Red]-"Rp "#,##0'
         ws.row_dimensions[index].height = min(409, 30 + 14 * max(len(row.description)//38, len(row.notes or '')//68,
@@ -152,7 +157,9 @@ def excel(rows, payload, name):
     # Excel retains the formulas and recalculates them after edits.
     from zipfile import ZipFile, ZIP_DEFLATED
     from xml.etree import ElementTree as ET
-    cached = dict(zip(['B6', 'E6', 'H6', 'B7', 'E7', 'H7'], totals(rows)))
+    summary_values = totals(rows)
+    summary_values[1] = -abs(summary_values[1])
+    cached = dict(zip(['B6', 'E6', 'H6', 'B7', 'E7', 'H7'], summary_values))
     result = BytesIO()
     ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
     with ZipFile(output) as source, ZipFile(result, 'w', ZIP_DEFLATED) as target:
@@ -174,7 +181,7 @@ def excel(rows, payload, name):
 def pdf(rows, payload, name):
     import reportlab
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
@@ -185,6 +192,8 @@ def pdf(rows, payload, name):
             pdfmetrics.registerFont(TTFont(font, str(fonts / filename)))
     regular = ParagraphStyle('Transaction', fontName='TransactionRegular', fontSize=8, leading=11, textColor=colors.HexColor('#334155'))
     bold = ParagraphStyle('TransactionBold', parent=regular, fontName='TransactionBold')
+    income_style = ParagraphStyle('TransactionIncome', parent=bold, textColor=colors.HexColor('#15803D'))
+    expense_style = ParagraphStyle('TransactionExpense', parent=bold, textColor=colors.HexColor('#B91C1C'))
     title = ParagraphStyle('TransactionTitle', parent=bold, fontSize=20, leading=24)
     def p(value, style=regular):
         return Paragraph(escape(safe_text(value)).replace('\n', '<br/>'), style)
@@ -192,25 +201,35 @@ def pdf(rows, payload, name):
         p(f'{len(rows)} transaksi sesuai tabel yang diekspor'), p(filters(payload)), Spacer(1, 12)]
     labels = ['Pendapatan', 'Pengeluaran', 'Arus Kas Bersih', 'Pengembalian Piutang', 'Transfer Antar Rekening', 'Tarik Tunai']
     values = totals(rows)
-    summary = LongTable([[p(labels[i] + '\n' + money(values[i]), bold) for i in range(3)],
-                         [p(labels[i] + '\n' + money(values[i]), bold) for i in range(3, 6)]], colWidths=[259]*3)
+    summary_styles = [income_style, expense_style,
+        income_style if values[2] > 0 else expense_style if values[2] < 0 else bold,
+        income_style, bold, bold]
+    summary_values = values.copy()
+    summary_values[1] = -abs(summary_values[1])
+    summary = LongTable([[p(labels[i] + '\n' + money(summary_values[i]), summary_styles[i]) for i in range(3)],
+                         [p(labels[i] + '\n' + money(summary_values[i]), summary_styles[i]) for i in range(3, 6)]], colWidths=[(A4[0]-64)/3]*3)
     summary.setStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#EAF0FF')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 9), ('BOTTOMPADDING', (0, 0), (-1, -1), 9)])
     story.extend([summary, Spacer(1, 8), p(NOTE), Spacer(1, 12)])
-    headers = ['Tanggal', 'Deskripsi / Catatan', 'Kategori', 'Jenis', 'Nominal', 'Rekening Sumber', 'Rekening Tujuan']
+    headers = ['Tanggal', 'Deskripsi / Catatan', 'Kategori / Jenis', 'Nominal', 'Rekening']
     header_style = ParagraphStyle('TransactionHeader', parent=bold, textColor=colors.white)
     data = [[p(header, header_style) for header in headers]]
     for row in rows:
         description = row.description + ('\nCatatan: ' + row.notes if row.notes else '')
-        data.append([p(row.transaction_date.strftime('%d-%m-%Y')), p(description), p(CATEGORIES.get(row.category, row.category)),
-            p(KINDS[row.kind]), p(money(int(row.amount))), p(row.source_label or 'Tunai / Tidak dicatat'), p(row.destination_label or 'Tunai / Tidak dicatat')])
-    table = LongTable(data, colWidths=[62, 210, 102, 85, 90, 110, 119], repeatRows=1, splitInRow=1)
+        amount = int(row.amount)
+        transaction_style = income_style if row.kind == 'income' else expense_style if row.kind == 'expense' else bold
+        displayed_amount = -abs(amount) if row.kind == 'expense' else amount
+        accounts = 'Sumber: ' + (row.source_label or 'Tunai / Tidak dicatat') + '\nTujuan: ' + (row.destination_label or 'Tunai / Tidak dicatat')
+        data.append([p(row.transaction_date.strftime('%d-%m-%Y')), p(description),
+            [p(CATEGORIES.get(row.category, row.category)), p(KINDS[row.kind], transaction_style)],
+            p(money(displayed_amount), transaction_style), p(accounts)])
+    table = LongTable(data, colWidths=[62, 145, 96, 100, A4[0]-64-403], repeatRows=1, splitInRow=1)
     table.setStyle([('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#334155')),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F7F9FC')]),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7)])
     story.append(table)
     output = BytesIO()
-    width, height = landscape(A4)
+    width, height = A4
     def footer(canvas, doc):
         canvas.saveState()
         canvas.setFont('TransactionRegular', 8)
