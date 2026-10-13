@@ -121,3 +121,5 @@ Menu /bank-accounts tersambung ke API backend untuk tambah, edit, dan hapus reke
 ## Savings
 
 Savings menyediakan tabungan uang, logam mulia (emas/perak) berdasarkan gram/keping, deposito, dan riwayat tambah/kurangi. Ringkasan nominal/gram terpisah; harga emas manual dan bunga deposito hanya informasi. Lihat [API dan aturan Savings](docs/savings.md).
+
+Passkey opsional untuk akun Google: setelah diaktifkan, setiap login memerlukan verifikasi tambahan sebelum sesi penuh diterbitkan. Konfigurasi domain dan deployment: [Passkey](docs/passkeys.md).

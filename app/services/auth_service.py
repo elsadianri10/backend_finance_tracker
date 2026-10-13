@@ -104,36 +104,44 @@ async def google_login(token: str, db: AsyncSession) -> dict:
     user.picture_url = picture[:2048] if isinstance(picture, str) else None
     user.last_login_at = now
     await db.commit()
+    from app.models.passkey_model import Passkey
+    if await db.scalar(select(Passkey.id).where(Passkey.user_id == user.id).limit(1)):
+        from app.services.passkey_service import pending_login
+        return await pending_login(user, db)
+    return issue_access(user, 'google')
+
+
+def issue_access(user: User, method: str) -> dict:
+    now = datetime.now(timezone.utc)
     expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    access_token = jwt.encode(
-        {
-            "sub": str(user.id), "iat": now,
-            "exp": now + timedelta(seconds=expires_in),
-            "iss": settings.TOKEN_ISSUER, "aud": settings.TOKEN_AUDIENCE,
-            "type": "access",
-        },
-        settings.SECRET_KEY,
-        algorithm=settings.ALGORITHM,
-    )
-    return {"AccessToken": access_token, "TokenType": "bearer", "ExpiresIn": expires_in, "User": user}
+    token = jwt.encode({
+        'sub': str(user.id), 'iat': now, 'exp': now + timedelta(seconds=expires_in),
+        'iss': settings.TOKEN_ISSUER, 'aud': settings.TOKEN_AUDIENCE, 'type': 'access',
+        'ver': user.auth_version, 'auth_method': method, 'auth_time': int(now.timestamp()),
+    }, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return {'AccessToken': token, 'TokenType': 'bearer', 'ExpiresIn': expires_in, 'User': user}
+
+
+def token_claims(token: str, kind: str = 'access') -> dict[str, Any]:
+    settings.require_token_settings()
+    try:
+        claims = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM],
+            audience=settings.TOKEN_AUDIENCE, issuer=settings.TOKEN_ISSUER,
+            options={'require': ['sub', 'iat', 'exp', 'iss', 'aud', 'type']})
+        if claims['type'] != kind:
+            raise ValueError('Wrong token purpose')
+        UUID(claims['sub'])
+        return claims
+    except (jwt.InvalidTokenError, ValueError, TypeError) as exc:
+        raise HTTPException(401, 'Invalid or expired access token', headers={'WWW-Authenticate': 'Bearer'}) from exc
 
 
 async def user_from_access_token(token: str, db: AsyncSession) -> User:
-    settings.require_token_settings()
-    unauthorized = HTTPException(401, "Invalid or expired access token", headers={"WWW-Authenticate": "Bearer"})
-    try:
-        claims = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM],
-            audience=settings.TOKEN_AUDIENCE, issuer=settings.TOKEN_ISSUER,
-            options={"require": ["sub", "iat", "exp", "iss", "aud", "type"]},
-        )
-        if claims["type"] != "access":
-            raise unauthorized
-        user_id = UUID(claims["sub"])
-    except (jwt.InvalidTokenError, ValueError, TypeError) as exc:
-        raise unauthorized from exc
+    claims = token_claims(token)
+    user_id = UUID(claims['sub'])
+    unauthorized = HTTPException(401, 'Invalid or expired access token', headers={'WWW-Authenticate': 'Bearer'})
     user = await db.get(User, user_id)
-    if user is None:
+    if user is None or claims.get('ver', 0) != user.auth_version:
         raise unauthorized
     if not user.is_active:
         raise HTTPException(403, "Account is inactive")

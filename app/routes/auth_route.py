@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Response
 from app.controllers import auth_controller as controller
 from app.controllers.auth_controller import get_current_user
-from app.schemas.auth_schema import LoginResponse, UserResponse, GoogleLoginRequest
+from app.schemas.auth_schema import LoginResponse, PendingLoginResponse, UserResponse, GoogleLoginRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.db_config import get_db
 from app.models.user_model import User
@@ -10,7 +10,7 @@ from app.models.user_model import User
 router = APIRouter()
 
 
-@router.post('/google', response_model=LoginResponse)
+@router.post('/google', response_model=LoginResponse | PendingLoginResponse)
 async def login(
     payload: GoogleLoginRequest,
     response: Response,

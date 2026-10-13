@@ -35,6 +35,9 @@ async def check():
             await db.execute('INSERT INTO baseline_sentinel VALUES (42)')
             user, account, transaction, bill = [uuid4() for _ in range(4)]
             await db.execute("INSERT INTO users(id, google_sub, email, name, last_login_at) VALUES($1, 'synthetic', 'synthetic@example.test', 'Synthetic', NOW())", user)
+            await db.execute("INSERT INTO user_passkeys(id,user_id,credential_id,public_key,name,rp_id,sign_count,backed_up) VALUES($1,$2,$3,$4,'Synthetic','localhost',0,false)", uuid4(), user, b'credential', b'public-key')
+            await db.execute("INSERT INTO passkey_challenges(id,user_id,purpose,challenge,auth_version,expires_at,attempts) VALUES($1,$2,'LOGIN',$3,0,NOW()+INTERVAL '5 minutes',0)", uuid4(), user, b'challenge')
+            await db.execute("INSERT INTO passkey_recovery_codes(id,user_id,code_hash) VALUES($1,$2,$3)", uuid4(), user, 'a' * 64)
             await db.execute("INSERT INTO billing_accounts(id,user_id,platform_id,platform_type,has_fixed_bill_date) VALUES($1,$2,1,'PAY_LATER',false)", account, user)
             await db.execute("INSERT INTO billing_transactions(id,account_id,description,tenor,transaction_date,first_installment,transaction_kind,amount) VALUES($1,$2,'Synthetic',0,'2026-10-05','2026-10-05','SUBSCRIPTION',15000)", transaction, account)
             await db.execute("INSERT INTO billing_installments(id,transaction_id,sequence,amount,due_date,charged_on) VALUES($1,$2,25,15000,'2028-10-05','2028-10-05')", bill, transaction)
@@ -61,6 +64,8 @@ async def check():
             assert await db.fetchval('SELECT COUNT(*) FROM debt_payments') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM debt_installments') == 2
             assert await db.fetchval('SELECT COUNT(*) FROM users') == 1
+            for table in ('user_passkeys', 'passkey_challenges', 'passkey_recovery_codes'):
+                assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM billing_installments') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM wallet_providers') == 7
             for table in ('routine_plans', 'routine_payments', 'ledger_transactions', 'transaction_imports'):
@@ -79,6 +84,8 @@ async def check():
             await db.execute("INSERT INTO wallet_providers(id,name,is_active) VALUES(99,'Custom Platform',false)")
             platforms_before = await db.fetch('SELECT * FROM wallet_providers ORDER BY id')
             await db.execute(reset)
+            for table in ('user_passkeys', 'passkey_challenges', 'passkey_recovery_codes'):
+                assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
             assert await db.fetchval('SELECT COUNT(*) FROM debt_installments') == 0
             for table in ('ledger_transactions', 'routine_payments', 'routine_plans', 'transaction_imports', 'split_bill_shares', 'split_bill_items', 'split_bill_expenses', 'split_bill_participants', 'split_bill_groups', 'saving_movements', 'savings', 'bank_accounts', 'users', 'billing_accounts', 'billing_transactions', 'billing_installments', 'debts', 'debt_payments'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0

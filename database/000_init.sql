@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-020.
--- New/empty database: run this file only. Do NOT run 001-020 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-021.
+-- New/empty database: run this file only. Do NOT run 001-021 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -27,9 +27,47 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at TIMESTAMPTZ NOT NULL,
+    auth_version BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_user_auth_version CHECK (auth_version >= 0),
     CONSTRAINT uq_users_google_sub UNIQUE (google_sub)
 );
 
+
+CREATE TABLE IF NOT EXISTS user_passkeys (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credential_id BYTEA NOT NULL UNIQUE,
+    public_key BYTEA NOT NULL,
+    name VARCHAR(80) NOT NULL,
+    rp_id VARCHAR(253) NOT NULL,
+    sign_count BIGINT NOT NULL,
+    backed_up BOOLEAN NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at TIMESTAMPTZ,
+    CONSTRAINT ck_passkey_counter CHECK (sign_count >= 0)
+);
+CREATE INDEX IF NOT EXISTS ix_passkeys_user_id ON user_passkeys(user_id);
+CREATE TABLE IF NOT EXISTS passkey_challenges (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    purpose VARCHAR(10) NOT NULL,
+    challenge BYTEA NOT NULL,
+    auth_version BIGINT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    attempts INTEGER NOT NULL,
+    CONSTRAINT ck_passkey_purpose CHECK (purpose IN ('LOGIN','REGISTER','MANAGE')),
+    CONSTRAINT ck_passkey_attempts CHECK (attempts BETWEEN 0 AND 5)
+);
+CREATE INDEX IF NOT EXISTS ix_passkey_challenges_user ON passkey_challenges(user_id);
+CREATE TABLE IF NOT EXISTS passkey_recovery_codes (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash VARCHAR(64) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    used_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS ix_recovery_user ON passkey_recovery_codes(user_id);
 
 CREATE TABLE IF NOT EXISTS wallet_providers (
     id INTEGER PRIMARY KEY,
@@ -411,9 +449,10 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 020.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 021.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
+        ('users', 'auth_version'),
         ('savings', 'opening_amount'),
         ('savings', 'metal_type'),
         ('savings', 'price_date'),
@@ -444,7 +483,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 020.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 021.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
@@ -453,7 +492,7 @@ END $$;
 DO $$
 BEGIN
     IF current_setting('finance_tracker.reset')::boolean THEN
-        TRUNCATE TABLE ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
+        TRUNCATE TABLE user_passkeys, passkey_challenges, passkey_recovery_codes, ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
             RESTART IDENTITY;
     END IF;
 END $$;
