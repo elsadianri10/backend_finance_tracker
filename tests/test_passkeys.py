@@ -61,7 +61,7 @@ class PasskeyTests(unittest.IsolatedAsyncioTestCase):
         return {'Authorization': 'Bearer ' + token}
 
     async def enroll(self, headers=None, authenticator=None):
-        headers = headers or self.headers
+        headers = headers or await self.pending()
         authenticator = authenticator or self.authenticator
         options = await self.client.post('/passkeys/register/options', headers=headers)
         self.assertEqual(options.status_code, 200, options.text)
@@ -86,6 +86,47 @@ class PasskeyTests(unittest.IsolatedAsyncioTestCase):
         value = options.json()
         payload = {'ChallengeId': value['ChallengeId'], 'Credential': self.authenticator.response(value['Options'], **changes)}
         return payload
+
+    async def test_mandatory_enrollment_cannot_access_data_or_use_other_ceremonies(self):
+        pending = await self.pending()
+        raw = pending['Authorization'].split(' ', 1)[1]
+        claims = jwt.decode(raw, settings.SECRET_KEY, algorithms=['HS256'], audience=settings.TOKEN_AUDIENCE)
+        self.assertEqual(claims['type'], 'passkey_enrollment')
+        for path in ('/auth/me', '/transactions', '/bank-accounts', '/passkeys'):
+            self.assertEqual((await self.client.get(path, headers=pending)).status_code, 401)
+        for path in ('/passkeys/login/options', '/passkeys/manage/options', '/passkeys/recovery-codes'):
+            self.assertEqual((await self.client.post(path, headers=pending)).status_code, 401)
+        self.assertEqual((await self.client.post('/passkeys/recovery', headers=pending, json={'Code': 'anything'})).status_code, 401)
+        legacy = claims | {'type': 'access', 'auth_method': 'google'}
+        for method in ('google', None):
+            legacy['auth_method'] = method
+            headers = self.header(jwt.encode(legacy, settings.SECRET_KEY, algorithm='HS256'))
+            for path in ('/auth/me', '/transactions', '/passkeys'):
+                self.assertEqual((await self.client.get(path, headers=headers)).status_code, 401)
+            self.assertEqual((await self.client.post('/passkeys/register/options', headers=headers)).status_code, 401)
+        options = (await self.client.post('/passkeys/register/options', headers=pending)).json()
+        payload = {'ChallengeId': options['ChallengeId'], 'Credential': self.authenticator.response(options['Options'], register=True)}
+        other_pending = await self.pending()
+        self.assertEqual((await self.client.post('/passkeys/register/verify', headers=other_pending, json=payload)).status_code, 401)
+        self.assertEqual((await self.client.post('/passkeys/register/verify', headers=pending, json=payload)).status_code, 200)
+        self.assertEqual((await self.client.post('/passkeys/register/verify', headers=pending, json=payload)).status_code, 401)
+        self.assertEqual((await self.client.post('/passkeys/register/options', headers=other_pending)).status_code, 401)
+
+    async def test_first_enrollment_rejects_expired_origin_rp_and_uv(self):
+        for changes in ({'origin': 'https://evil.example.test'}, {'rp': 'evil.example.test'}, {'uv': False}):
+            pending = await self.pending()
+            value = (await self.client.post('/passkeys/register/options', headers=pending)).json()
+            payload = {'ChallengeId': value['ChallengeId'], 'Credential': self.authenticator.response(value['Options'], register=True, **changes)}
+            self.assertEqual((await self.client.post('/passkeys/register/verify', headers=pending, json=payload)).status_code, 401)
+        pending = await self.pending()
+        value = (await self.client.post('/passkeys/register/options', headers=pending)).json()
+        async with self.sessions() as db:
+            row = await db.get(PasskeyChallenge, UUID(value['ChallengeId']))
+            row.expires_at = service.now() - timedelta(seconds=1)
+            await db.commit()
+        self.assertEqual((await self.client.post('/passkeys/register/options', headers=pending)).status_code, 401)
+        payload = {'ChallengeId': value['ChallengeId'], 'Credential': self.authenticator.response(value['Options'], register=True)}
+        self.assertEqual((await self.client.post('/passkeys/register/verify', headers=pending, json=payload)).status_code, 401)
 
     async def test_enrollment_pending_login_real_signature_and_replay(self):
         registered = await self.enroll()
@@ -179,7 +220,8 @@ class PasskeyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.post('/passkeys/recovery-codes', headers=fresh)).status_code, 200)
 
     async def test_signature_tamper_and_cross_user_registration_challenge(self):
-        options = (await self.client.post('/passkeys/register/options', headers=self.headers)).json()
+        pending_enrollment = await self.pending()
+        options = (await self.client.post('/passkeys/register/options', headers=pending_enrollment)).json()
         crossed = await self.client.post('/passkeys/register/verify', headers=self.auth_headers(self.other_id), json={
             'ChallengeId': options['ChallengeId'], 'Credential': self.authenticator.response(options['Options'], register=True)})
         self.assertEqual(crossed.status_code, 401)

@@ -104,11 +104,8 @@ async def google_login(token: str, db: AsyncSession) -> dict:
     user.picture_url = picture[:2048] if isinstance(picture, str) else None
     user.last_login_at = now
     await db.commit()
-    from app.models.passkey_model import Passkey
-    if await db.scalar(select(Passkey.id).where(Passkey.user_id == user.id).limit(1)):
-        from app.services.passkey_service import pending_login
-        return await pending_login(user, db)
-    return issue_access(user, 'google')
+    from app.services.passkey_service import pending_login
+    return await pending_login(user, db)
 
 
 def issue_access(user: User, method: str) -> dict:
@@ -138,6 +135,8 @@ def token_claims(token: str, kind: str = 'access') -> dict[str, Any]:
 
 async def user_from_access_token(token: str, db: AsyncSession) -> User:
     claims = token_claims(token)
+    if claims.get('auth_method') not in ('passkey', 'recovery'):
+        raise HTTPException(401, 'Login kembali dan daftarkan atau verifikasi passkey untuk membuka akun.')
     user_id = UUID(claims['sub'])
     unauthorized = HTTPException(401, 'Invalid or expired access token', headers={'WWW-Authenticate': 'Bearer'})
     user = await db.get(User, user_id)

@@ -52,7 +52,7 @@ class BillingTests(unittest.IsolatedAsyncioTestCase):
 
     def auth_headers(self, user_id):
         now = datetime.now(timezone.utc)
-        token = jwt.encode({"sub": str(user_id), "iat": now, "exp": now + timedelta(minutes=5), "type": "access", "iss": settings.TOKEN_ISSUER, "aud": settings.TOKEN_AUDIENCE}, settings.SECRET_KEY, algorithm="HS256")
+        token = jwt.encode({"sub": str(user_id), "iat": now, "exp": now + timedelta(minutes=5), "type": "access", "auth_method": "passkey", "iss": settings.TOKEN_ISSUER, "aud": settings.TOKEN_AUDIENCE}, settings.SECRET_KEY, algorithm="HS256")
         return {"Authorization": "Bearer " + token}
 
     async def asyncTearDown(self):
