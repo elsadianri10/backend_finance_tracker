@@ -45,6 +45,8 @@ def config():
 
 async def account(token, db, kind='access'):
     claims = token_claims(token, kind)
+    if kind == 'access' and claims.get('auth_method') not in ('passkey', 'recovery'):
+        raise HTTPException(401, 'Login kembali untuk mendaftarkan atau memverifikasi passkey.')
     user = await db.scalar(select(User).where(User.id == UUID(claims['sub'])).with_for_update())
     if user is None or not user.is_active or claims.get('ver', 0) != user.auth_version:
         raise HTTPException(401, 'Sesi telah berakhir. Silakan login kembali.')
@@ -82,12 +84,31 @@ async def pending_login(user, db):
     user = await db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
     if user is None or not user.is_active:
         raise HTTPException(403, 'Account is inactive')
-    row = await challenge(user, 'LOGIN', db)
+    enrollment = not bool(await keys(user, db))
+    row = await challenge(user, 'REGISTER' if enrollment else 'LOGIN', db)
     token = jwt.encode({'sub': str(user.id), 'iat': now(), 'exp': row.expires_at,
-        'iss': settings.TOKEN_ISSUER, 'aud': settings.TOKEN_AUDIENCE, 'type': 'passkey_pending',
+        'iss': settings.TOKEN_ISSUER, 'aud': settings.TOKEN_AUDIENCE,
+        'type': 'passkey_enrollment' if enrollment else 'passkey_pending',
         'jti': str(row.id), 'ver': user.auth_version}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     await db.commit()
-    return {'PasskeyRequired': True, 'PendingToken': token, 'ExpiresIn': 300}
+    return {'PasskeyRequired': True, 'EnrollmentRequired': enrollment, 'PendingToken': token, 'ExpiresIn': 300}
+
+
+async def ceremony_account(token, db, purpose):
+    if purpose == 'LOGIN':
+        return await account(token, db, 'passkey_pending')
+    if purpose == 'REGISTER':
+        try:
+            token_claims(token, 'passkey_enrollment')
+        except HTTPException as exc:
+            if exc.status_code != 401:
+                raise
+        else:
+            user, claims = await account(token, db, 'passkey_enrollment')
+            if await keys(user, db):
+                raise HTTPException(401, 'Passkey sudah terdaftar. Login kembali.')
+            return user, claims
+    return await account(token, db)
 
 
 async def active_challenge(user, row_id, purpose, db):
@@ -107,16 +128,17 @@ async def failed(row, db) -> NoReturn:
 
 
 async def options(token, db, purpose):
-    user, claims = await account(token, db, 'passkey_pending' if purpose == 'LOGIN' else 'access')
+    user, claims = await ceremony_account(token, db, purpose)
     rp, _ = config()
     existing = await keys(user, db)
     if purpose == 'REGISTER':
-        await fresh(user, claims, db)
+        if claims['type'] == 'access':
+            await fresh(user, claims, db)
         if len(existing) >= 10:
             raise HTTPException(409, 'Maksimal 10 passkey per akun.')
         if any(key.rp_id != rp for key in existing):
             raise HTTPException(409, 'Domain passkey berbeda dari domain akun.')
-    row = await active_challenge(user, UUID(claims['jti']), purpose, db) if purpose == 'LOGIN' else await challenge(user, purpose, db)
+    row = await active_challenge(user, UUID(claims['jti']), purpose, db) if claims['type'] != 'access' else await challenge(user, purpose, db)
     descriptors = [PublicKeyCredentialDescriptor(id=key.credential_id) for key in existing if key.rp_id == rp]
     if purpose == 'REGISTER':
         opts = generate_registration_options(rp_id=rp, rp_name='Finance Tracker', user_name=user.email,
@@ -149,14 +171,15 @@ async def new_codes(user, db):
 
 
 async def verify(token, payload, db, purpose):
-    user, claims = await account(token, db, 'passkey_pending' if purpose == 'LOGIN' else 'access')
-    if purpose == 'LOGIN' and str(payload.challenge_id) != claims.get('jti'):
+    user, claims = await ceremony_account(token, db, purpose)
+    if claims['type'] != 'access' and str(payload.challenge_id) != claims.get('jti'):
         raise HTTPException(401, 'Verifikasi tidak sesuai sesi login.')
     row = await active_challenge(user, payload.challenge_id, purpose, db)
     rp, origins = config()
     codes = []
     if purpose == 'REGISTER':
-        await fresh(user, claims, db)
+        if claims['type'] == 'access':
+            await fresh(user, claims, db)
         existing = await keys(user, db)
         if len(existing) >= 10:
             raise HTTPException(409, 'Maksimal 10 passkey per akun.')

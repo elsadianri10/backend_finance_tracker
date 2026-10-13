@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from .version_controller import get_version
 
 if TYPE_CHECKING:
+    from . import transaction_export_controller
     from . import passkey_controller
     from . import (
         auth_controller,
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "transaction_export_controller",
     "passkey_controller",
     'auth_controller',
     'bank_account_controller',

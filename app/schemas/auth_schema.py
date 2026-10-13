@@ -24,5 +24,6 @@ class LoginResponse(PascalModel):
 
 class PendingLoginResponse(PascalModel):
     passkey_required: bool = True
+    enrollment_required: bool = False
     pending_token: str
     expires_in: int

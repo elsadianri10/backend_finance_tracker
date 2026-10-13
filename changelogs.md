@@ -11,6 +11,13 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-13
+
+- Ekspor Transaksi: endpoint terautentikasi `POST /transactions/export/{pdf|xlsx}` menghasilkan laporan PDF dan Excel sesuai bulan, pencarian, jenis, rekening dan transaksi yang dipilih. Backend memvalidasi kepemilikan, status aktif serta filter sebelum membaca data; laporan memuat ringkasan, rincian transaksi, rekening tersensor dan catatan. PDF memakai A4 landscape dengan header tabel berulang; Excel menyimpan angka/tanggal asli, filter tabel dan rumus ringkasan dengan cache awal, serta memperlakukan input pengguna sebagai teks untuk mencegah formula injection. Tidak mengubah data atau membutuhkan migrasi/paket baru. Tes ekspor PDF/Excel dan validasi akses/filter lolos pada database sintetis.
+- Koreksi tipe layanan ekspor: worksheet diperiksa sebelum digunakan, `PageSetupProperties` diinisialisasi eksplisit, dan referensi sel XML diperiksa terhadap `None` sebelum membaca cache rumus. Mengatasi diagnostik Pylance yang dilaporkan; kedua tes ekspor PDF/Excel lolos setelah perbaikan.
+
+- Passkey wajib untuk seluruh akun: Google hanya menerbitkan sesi sementara pendaftaran/verifikasi, pendaftaran pertama terikat challenge sekali pakai selama 5 menit, dan API menolak sesi lama yang hanya memakai Google. Data keuangan dan schema database tetap utuh. Verifikasi: 102 tes backend sintetis lolos, termasuk pendaftaran wajib, penolakan sesi Google lama, ikatan challenge, replay, UV/origin/RP dan kedaluwarsa.
+
 ### 2026-10-12
 
 - Keamanan Passkey: pendaftaran/penghapusan di Profil Saya, Google → sesi sementara → verifikasi WebAuthn wajib untuk akun aktif-passkey, dan kode pemulihan sekali pakai. Signature/origin/RP/UV/counter diverifikasi `webauthn==2.8.0`; challenge purpose-bound/sekali pakai/kedaluwarsa, lock dan pembatasan percobaan, HMAC kode pemulihan, serta versi sesi mencegah bypass Google/replay/sesi lama. Passkey terakhir dilindungi; perubahan keamanan memerlukan verifikasi baru. Migration 021 additive/relasional, baseline sampai 021, diterapkan pada database proyek dengan backup dan seluruh record lama identik. 96 tes backend lolos pada suite penuh, dan enam tes passkey final lolos termasuk signature rusak/verifikasi ulang dengan authenticator sintetis; upgrade dan init/reset hanya diuji di schema sintetis. Konfigurasi RP produksi memakai domain frontend yang diberikan pengguna; local memakai localhost. Belum mendaftarkan passkey pada perangkat fisik pengguna.

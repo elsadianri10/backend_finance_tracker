@@ -23,7 +23,7 @@ from main import app, parse_origins
 from app.config import auth_settings as settings
 from app.config.db_config import get_db
 from app.models import Base, User
-from app.services.auth_service import google_rejection_reason
+from app.services.auth_service import google_rejection_reason, issue_access
 
 
 class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
@@ -92,13 +92,16 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.headers["cache-control"], "no-store")
         second = await self.login(name="Updated", email="new@gmail.com")
         self.assertEqual(second.status_code, 200, second.text)
-        self.assertEqual(first.json()["User"]["Id"], second.json()["User"]["Id"])
-        me = await self.client.get("/auth/me", headers={"Authorization": "Bearer " + second.json()["AccessToken"]})
-        self.assertEqual(me.status_code, 200, me.text)
-        self.assertEqual(me.json()["Name"], "Updated")
-        self.assertEqual(me.json()["Email"], "new@gmail.com")
+        for response in (first, second):
+            self.assertTrue(response.json()['EnrollmentRequired'])
+            self.assertNotIn('AccessToken', response.json())
         async with self.sessions() as session:
             self.assertEqual(await session.scalar(select(func.count()).select_from(User)), 1)
+            user = await session.scalar(select(User))
+            self.assertEqual(user.name, 'Updated')
+            self.assertEqual(user.email, 'new@gmail.com')
+        pending = second.json()['PendingToken']
+        self.assertEqual((await self.client.get('/auth/me', headers={'Authorization': 'Bearer ' + pending})).status_code, 401)
 
     async def test_invalid_google_claims_and_signature_are_rejected(self):
         for changes in ({"aud": "wrong-client"}, {"iss": "https://attacker.test"}, {"exp": int(time.time()) - 600}, {"email_verified": False}, {"sub": ""}):
@@ -123,7 +126,9 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_inactive_user_cannot_login_or_access_profile(self):
         login = await self.login()
-        token = login.json()["AccessToken"]
+        async with self.sessions() as session:
+            user = await session.scalar(select(User))
+            token = issue_access(user, 'passkey')['AccessToken']
         async with self.sessions() as session:
             user = await session.scalar(select(User))
             user.is_active = False
@@ -133,7 +138,9 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_access_tokens_are_validated(self):
         login = await self.login()
-        token = login.json()["AccessToken"]
+        async with self.sessions() as session:
+            user = await session.scalar(select(User))
+            token = issue_access(user, 'passkey')['AccessToken']
         claims = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], audience=settings.TOKEN_AUDIENCE)
         self.assertEqual((await self.client.get("/auth/me")).status_code, 401)
         self.assertEqual((await self.client.get("/auth/me", headers={"Authorization": "Bearer garbage"})).status_code, 401)
@@ -156,7 +163,8 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
     async def test_same_email_does_not_link_google_accounts(self):
         first = await self.login()
         second = await self.login(sub="different-google-sub")
-        self.assertNotEqual(first.json()["User"]["Id"], second.json()["User"]["Id"])
+        decode = lambda response: jwt.decode(response.json()['PendingToken'], settings.SECRET_KEY, algorithms=['HS256'], audience=settings.TOKEN_AUDIENCE)
+        self.assertNotEqual(decode(first)['sub'], decode(second)['sub'])
 
     async def test_cors_and_version(self):
         response = await self.client.options("/auth/google", headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type"})
