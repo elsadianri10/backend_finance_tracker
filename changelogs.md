@@ -13,6 +13,8 @@
 
 ### 2026-10-13
 
+- Urutan PDF/Excel Transaksi: tanggal transaksi naik, lalu jam `created_at` dalam WIB naik untuk tanggal yang sama. Tanggal dari `created_at` tidak menggantikan tanggal transaksi; jika jam sama, urutan tabel dipertahankan. Tiga tes ekspor lolos, termasuk konversi UTC melewati tengah malam, tanggal pencatatan berbeda, jam sama dan konsistensi kedua format.
+
 - Penyesuaian ekspor: PDF menjadi A4 portrait dengan kolom kategori/jenis dan rekening sumber/tujuan digabung agar tetap terbaca. PDF dan Excel diurutkan dari tanggal paling awal, mempertahankan urutan tabel untuk tanggal yang sama. Excel memakai pemasukan hijau, pengeluaran merah bernilai negatif, transfer netral, serta rumus/cache arus kas yang disesuaikan. Dua tes ekspor lolos mencakup tanggal, tanda nominal, warna, rumus dan nilai cache. PDF portrait tiga halaman dan Excel diperiksa secara visual; perubahan nominal pada salinan workbook juga diuji untuk memastikan rumus pengeluaran/arus kas menghitung ulang dengan benar. Data aplikasi tidak berubah.
 
 - Tampilan PDF Transaksi: jenis dan nominal pemasukan berwarna hijau, pengeluaran merah dengan tanda minus, dan transfer netral. Ringkasan mengikuti warna pemasukan/pengeluaran serta arah arus kas bersih. Perubahan hanya pada tampilan PDF; nominal tersimpan dan perhitungan tidak berubah. Dua tes ekspor lolos dan empat halaman laporan sintetis diperiksa secara visual.

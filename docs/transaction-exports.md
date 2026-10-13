@@ -1,6 +1,6 @@
 # Ekspor Transaksi
 
-Menu Transaksi menyediakan Ekspor PDF dan Ekspor Excel (.xlsx), menggantikan CSV. Ekspor mengikuti bulan, pencarian, jenis, rekening dan baris yang terlihat. Tanggal paling awal dahulu; untuk tanggal yang sama, urutan baris dari tabel dipertahankan. Ekspor akun memerlukan login; tombol ekspor pada mode demo dinonaktifkan.
+Menu Transaksi menyediakan Ekspor PDF dan Ekspor Excel (.xlsx), menggantikan CSV. Ekspor mengikuti bulan, pencarian, jenis, rekening dan baris yang terlihat. Tanggal transaksi paling awal dahulu, lalu jam pencatatan dari `created_at` dalam WIB untuk tanggal yang sama. Hanya komponen jam yang dipakai, bukan tanggal pencatatan. Jika tanggal dan jam sama, urutan baris dari tabel dipertahankan. Ekspor akun memerlukan login; tombol ekspor pada mode demo dinonaktifkan.
 
 FE mengirim `Month`, `TransactionIds`, `Search`, `Kind`, `Bank` ke POST `/transactions/export/{pdf|xlsx}`. Backend membaca baris aktif milik pengguna saja, memeriksa bulan/filter dan ID unik (1–5000), lalu membangun laporan tanpa menulis database. Perubahan/void/baris yang tidak tersedia menghasilkan 409 dan pengguna diminta memuat ulang. Proxy memakai JWT HttpOnly, same-origin, no-store, nama file tetap tervalidasi dan tipe unduhan sesuai format. Tidak memicu refresh/mengulang penyimpanan transaksi.
 

@@ -1,12 +1,13 @@
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
+from unittest.mock import patch
 from io import BytesIO
 from uuid import uuid4
 from openpyxl import load_workbook
 from sqlalchemy import select
 import test_billing as fixture
 from app.models import LedgerTransaction
-from app.services.transaction_export_service import totals
+from app.services.transaction_export_service import totals, pdf as render_pdf
 
 
 class ExportTests(unittest.IsolatedAsyncioTestCase):
@@ -34,6 +35,31 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
 
     def payload(self, rows, **changes):
         return {'Month': '2026-10', 'TransactionIds': [str(row.id) for row in rows]} | changes
+
+    async def test_export_order_uses_transaction_date_then_created_clock_in_wib(self):
+        rows, _ = await self.seed()
+        recorded = [datetime(2026, 10, 13, 20, tzinfo=timezone.utc),
+                    datetime(2026, 10, 12, 3, tzinfo=timezone.utc),
+                    datetime(2026, 10, 11, 15, tzinfo=timezone.utc),
+                    datetime(2026, 10, 14, 3, tzinfo=timezone.utc),
+                    datetime(2026, 10, 10, 0, tzinfo=timezone.utc)]
+        async with self.sessions() as db:
+            for index, row in enumerate(rows):
+                stored = await db.get(LedgerTransaction, row.id)
+                stored.transaction_date = date(2026, 10, 2 if index == 4 else 1)
+                stored.created_at = recorded[index]
+            await db.commit()
+        selected = [rows[index] for index in (2, 4, 3, 1, 0)]
+        expected = [rows[index] for index in (0, 3, 1, 2, 4)]
+        payload = self.payload(selected)
+        result = await self.client.post('/transactions/export/xlsx', headers=self.headers, json=payload)
+        self.assertEqual(result.status_code, 200)
+        sheet = load_workbook(BytesIO(result.content)).active
+        self.assertEqual([sheet.cell(index, 2).value for index in range(13, 18)], [row.description for row in expected])
+        with patch('app.services.transaction_export_service.pdf', wraps=render_pdf) as rendered:
+            result = await self.client.post('/transactions/export/pdf', headers=self.headers, json=payload)
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual([row.id for row in rendered.call_args.args[0]], [row.id for row in expected])
 
     async def test_xlsx_numeric_dates_formulas_cache_and_no_formula_injection(self):
         rows, _ = await self.seed()

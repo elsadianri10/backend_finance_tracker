@@ -1,6 +1,6 @@
 """Read-only reports from authenticated, active ledger rows selected by the UI."""
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 import re
@@ -62,7 +62,14 @@ async def load(payload: TransactionExportInput, user_id, db):
             or payload.search.lower() not in (row.description + ' ' + category).lower()):
             raise HTTPException(409, 'Filter transaksi berubah. Muat ulang sebelum mengekspor.')
     positions = {key: index for index, key in enumerate(payload.transaction_ids)}
-    return sorted(rows, key=lambda row: (row.transaction_date.toordinal(), positions[row.id]))
+    def order(row: LedgerTransaction):
+        created = row.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        # Use the recorded clock time in WIB; the transaction date remains authoritative.
+        clock = created.astimezone(timezone(timedelta(hours=7))).time()
+        return row.transaction_date.toordinal(), clock, positions[row.id]
+    return sorted(rows, key=order)
 
 
 def excel(rows, payload, name):
@@ -213,7 +220,7 @@ def pdf(rows, payload, name):
     story.extend([summary, Spacer(1, 8), p(NOTE), Spacer(1, 12)])
     headers = ['Tanggal', 'Deskripsi / Catatan', 'Kategori / Jenis', 'Nominal', 'Rekening']
     header_style = ParagraphStyle('TransactionHeader', parent=bold, textColor=colors.white)
-    data = [[p(header, header_style) for header in headers]]
+    data: list[list[Paragraph | list[Paragraph]]] = [[p(header, header_style) for header in headers]]
     for row in rows:
         description = row.description + ('\nCatatan: ' + row.notes if row.notes else '')
         amount = int(row.amount)
