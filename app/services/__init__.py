@@ -4,6 +4,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from . import wishlist_service
     from . import transaction_export_service
     from . import passkey_service
     from . import (
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "wishlist_service",
     "transaction_export_service",
     "passkey_service",
     'auth_service',

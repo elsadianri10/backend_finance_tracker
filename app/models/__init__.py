@@ -1,4 +1,5 @@
 from .base_model import Base
+from .wishlist_model import Wishlist, WishlistGroup, WishlistItem, WishlistPhoto, WishlistReservation
 from .passkey_model import Passkey, PasskeyChallenge, RecoveryCode
 from .user_model import User
 from .billing_model import BillingAccount, BillingPlatform, WalletProvider
@@ -11,6 +12,7 @@ from .split_bill_model import SplitBillGroup, SplitBillParticipant, SplitBillExp
 from .routine_model import RoutinePlan, RoutinePayment, LedgerTransaction, TransactionImport
 
 __all__ = [
+    'Wishlist', 'WishlistGroup', 'WishlistItem', 'WishlistPhoto', 'WishlistReservation',
     "Passkey", "PasskeyChallenge", "RecoveryCode",
     "Base", "User", "WalletProvider", "BillingPlatform", "BillingAccount",
     "BillingTransaction", "BillingInstallment", "BankAccount", "Debt", "DebtPayment", "DebtInstallment",
