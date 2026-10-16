@@ -11,6 +11,10 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-16
+
+- Wishlist: tujuh jenis daftar pribadi, grup/subtotal dan barang terpisah, prioritas/status, detail Holiday/kendaraan/gadget, serta beberapa URL foto. Link publik dapat dibuat/dicabut; reservasi wajib login, satu pemesan per barang, pembatalan hanya pemesan/pemilik, dan nama pemesan diproyeksikan hanya ke pemilik/pemesan. Route → controller → service, lima tabel relasional tanpa JSON/JSONB, migration additive 022 dan baseline terbaru. Upgrade/reset dan konflik reservasi PostgreSQL diverifikasi hanya dalam schema sintetis; data keuangan aplikasi tidak diubah. Verifikasi: 107 tes backend lolos; empat tes Wishlist mencakup CRUD/privasi/akses/status, dan PostgreSQL menguji upgrade, baseline/reset serta reservasi bersamaan.
+
 ### 2026-10-13
 
 - Urutan PDF/Excel Transaksi: tanggal transaksi naik, lalu jam `created_at` dalam WIB naik untuk tanggal yang sama. Tanggal dari `created_at` tidak menggantikan tanggal transaksi; jika jam sama, urutan tabel dipertahankan. Tiga tes ekspor lolos, termasuk konversi UTC melewati tengah malam, tanggal pencatatan berbeda, jam sama dan konsistensi kedua format.

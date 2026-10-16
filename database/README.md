@@ -21,7 +21,7 @@
 - `020_split_bill_discount.sql`: menambahkan kolom BIGINT `discount` dengan default 0 pada pengeluaran Split Bill. Data/perhitungan lama dipertahankan. Uji schema sintetis: `tests/check_split_discount_migration.py`; tambahkan `--apply` untuk backup dan pemeriksaan seluruh record sebelum commit. Telah diterapkan pada database proyek 12 Oktober 2026 tanpa reset. Database deployment terpisah perlu upgrade 020 sebelum backend terbaru dijalankan.
 - `021_passkeys.sql`: menambah `users.auth_version` dan tiga tabel relasional passkey/challenge/kode pemulihan. Tidak mengubah data keuangan atau mengaktifkan passkey akun secara otomatis. Uji: `tests/check_passkey_migration.py`; `--apply` membuat backup dan membandingkan seluruh record sebelum commit. Diterapkan pada database proyek 12 Oktober 2026 tanpa reset. Konfigurasi domain/deployment: [Passkey](../docs/passkeys.md).
 - Perubahan berikutnya memakai `022_...`, `023_...`, dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
-- Database baru: jalankan 000 saja; 001–021 sudah tergabung dan tidak perlu dijalankan lagi. Database lama: gunakan hanya migration yang belum diterapkan, berurutan dan sekali per database. Catat versi yang sudah diterapkan. Tidak ada auto-migration saat aplikasi mulai.
+- Database baru: jalankan 000 saja; 001–022 sudah tergabung dan tidak perlu dijalankan lagi. Database lama: gunakan hanya migration yang belum diterapkan, berurutan dan sekali per database. Catat versi yang sudah diterapkan. Tidak ada auto-migration saat aplikasi mulai.
 - 000 adalah snapshot baseline terkini; perubahan 000 tidak dipakai untuk upgrade database yang sudah berjalan. Jangan ubah migration historis 001 dan seterusnya. Tambahkan file baru dengan `ALTER TABLE` atau `CREATE TABLE` dan transaksi `BEGIN` / `COMMIT`.
 - Buat database terlebih dahulu; script tidak membuat database atau user PostgreSQL.
 
@@ -41,7 +41,7 @@ SELECT set_config('finance_tracker.reset', 'on', true);
 - `on` (default): membuat tabel yang belum ada, lalu menjalankan `TRUNCATE` seluruh tabel aplikasi, termasuk `ledger_transactions`, `routine_payments`, `routine_plans`, dan `transaction_imports`. Semua grup Split Bill, rencana rutin dan pembayaran, ledger transaksi, simpanan, hutang/piutang, tagihan, akun, dan pengguna dihapus. Struktur tabel serta seluruh isi `wallet_providers` (termasuk platform custom/status aktif) tetap dipertahankan. Seed default yang belum ada ditambahkan tanpa menimpa platform lama. Akun Google perlu login kembali; kunci enkripsi tidak berubah.
 - `off`: hanya membuat tabel yang belum ada dan menambahkan seed yang belum ada; data aplikasi tidak dikosongkan.
 
-Jalankan seluruh file memakai `psql ... -v ON_ERROR_STOP=1 -f database/000_init.sql`. Pastikan database/schema tujuan benar. Script bekerja di schema aktif (`search_path`), tidak memakai DROP maupun TRUNCATE CASCADE. Foreign key dari tabel lain dapat membuat reset gagal; seluruh operasi dibatalkan oleh transaksi. Struktur lama tetap perlu migration yang belum diterapkan sampai 021 sebelum menjalankan script ini. Matikan backend saat reset agar tidak ada request bersamaan.
+Jalankan seluruh file memakai `psql ... -v ON_ERROR_STOP=1 -f database/000_init.sql`. Pastikan database/schema tujuan benar. Script bekerja di schema aktif (`search_path`), tidak memakai DROP maupun TRUNCATE CASCADE. Foreign key dari tabel lain dapat membuat reset gagal; seluruh operasi dibatalkan oleh transaksi. Struktur lama tetap perlu migration yang belum diterapkan sampai 022 sebelum menjalankan script ini. Matikan backend saat reset agar tidak ada request bersamaan.
 
 Reset belum dijalankan pada database aplikasi. Pengujian init/reset memakai schema acak dengan data sintetis:
 
@@ -68,3 +68,7 @@ Migration 008 mengganti nama platform menjadi wallet_providers dan menambahkan b
 
 Migration 009 menambahkan sumber rekening pada Piutang dan rencana cicilan 1–60 kali, tanpa mengubah pembayaran atau ketentuan transaksi lama. Telah diterapkan lokal 7 Oktober 2026. Detail: [Hutang & Piutang](../docs/debts-receivables.md).
 
+
+## Wishlist versi 022
+
+Database yang sudah pada 021: jalankan hanya `022_wishlists.sql` untuk menambah lima tabel Wishlist relasional tanpa mengubah data lama. Detail fitur dan verifikasi ada di `docs/wishlists.md`. Tidak ada auto-migration saat startup.

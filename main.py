@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.config.db_config import engine
 from app.routes import (
+    wishlist_router,
     transaction_export_router, passkey_router, auth_router, version_router, billing_router, debt_router, bank_account_router,
     savings_router, split_bill_router, routine_router, summary_router,
 )
@@ -47,6 +48,7 @@ async def validation_error(request, exc: RequestValidationError):
 
 
 app.include_router(transaction_export_router)
+app.include_router(wishlist_router)
 app.include_router(passkey_router)
 app.include_router(version_router)
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
