@@ -1,4 +1,5 @@
 from typing import Literal
+import re
 from uuid import UUID
 from urllib.parse import urlparse
 from pydantic import Field, field_validator
@@ -63,4 +64,4 @@ class ItemInput(NamedInput):
     def check_photos(cls, values):
         if any(not value or len(value) > 2048 for value in values):
             raise ValueError('URL foto tidak valid')
-        return [valid_url(value) for value in values]
+        return [value if re.fullmatch(r'/api/wishlists/images/[a-f0-9-]{36}/[0-5](?:\?v=[a-f0-9]{16})?', value) else valid_url(value) for value in values]

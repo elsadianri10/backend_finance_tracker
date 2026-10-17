@@ -33,6 +33,9 @@ async def check():
             migration = (ROOT/'database/022_wishlists.sql').read_text(encoding='utf-8')
             await db.execute(migration)
             await db.execute(migration)
+            uploads = (ROOT/'database/023_wishlist_uploads.sql').read_text(encoding='utf-8')
+            await db.execute(uploads)
+            await db.execute(uploads)
             assert before == await snapshot(db, tables)
             for table in NEW:
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
@@ -72,6 +75,19 @@ async def check():
                     assert error.status_code == 403
                     await session.rollback()
             assert before == await snapshot(db, tables)
+            # Upgrade an existing URL photo: preserve all five Wishlist tables too.
+            await db.execute('ALTER TABLE wishlist_photos DROP COLUMN blob_url')
+            await db.execute("INSERT INTO wishlist_photos(item_id,position,url) VALUES($1,0,'https://example.test/old.jpg')", item_id)
+            all_tables = tables + list(NEW)
+            existing = await snapshot(db, all_tables)
+            await db.execute(uploads)
+            await db.execute(uploads)
+            # New nullable storage metadata is the sole change.
+            assert await db.fetchval('SELECT url FROM wishlist_photos WHERE item_id=$1', item_id) == 'https://example.test/old.jpg'
+            assert await db.fetchval('SELECT blob_url FROM wishlist_photos WHERE item_id=$1', item_id) is None
+            await db.execute('ALTER TABLE wishlist_photos DROP COLUMN blob_url')
+            assert existing == await snapshot(db, all_tables)
+            await db.execute(uploads)
             await db.execute(baseline)
             for table in NEW:
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
