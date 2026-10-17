@@ -57,6 +57,7 @@ class WishlistPhoto(Base):
     item_id: Mapped[UUID] = mapped_column(ForeignKey('wishlist_items.id', ondelete='CASCADE'), primary_key=True)
     position: Mapped[int] = mapped_column(primary_key=True)
     url: Mapped[str] = mapped_column(String(2048))
+    blob_url: Mapped[str | None] = mapped_column(String(2048))
 
 
 class WishlistReservation(Base):

@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, File, Form, UploadFile, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.db_config import get_db
 from app.controllers.auth_controller import get_current_user
@@ -8,6 +8,21 @@ from app.models import User
 from app.schemas.wishlist_schema import WishlistInput, GroupInput, ItemInput
 
 router = APIRouter(prefix='/wishlists', tags=['Wishlist'])
+
+
+@router.get('/images/{item_id}/{position}')
+async def photo(item_id: UUID, position: int = Path(ge=0, le=5), share: str | None = Query(default=None, pattern=r'^[A-Za-z0-9_-]{43}$'), user: User | None = Depends(controller.optional_user), db: AsyncSession = Depends(get_db)):
+    return await controller.photo(item_id, position, share, user, db)
+
+
+@router.post('/{list_id}/items/upload', status_code=201)
+async def item_upload(list_id: UUID, response: Response, metadata: str = Form(..., max_length=40000), files: list[UploadFile] = File(...), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.upload(list_id, None, metadata, files, response, user, db)
+
+
+@router.patch('/{list_id}/items/{item_id}/upload')
+async def item_upload_update(list_id: UUID, item_id: UUID, response: Response, metadata: str = Form(..., max_length=40000), files: list[UploadFile] = File(...), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.upload(list_id, item_id, metadata, files, response, user, db)
 
 
 @router.get('')

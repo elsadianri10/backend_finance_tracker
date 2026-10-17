@@ -11,6 +11,10 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-17
+
+- Wishlist mendukung upload foto JPG/PNG/WebP ke Vercel Blob private selain link, maksimal enam foto gabungan. Validasi isi/ukuran, konversi WebP tanpa metadata, simpan atomik, cleanup file, serta akses pemilik/link berbagi aktif dengan respons tanpa cache. Migration additive 023 menambah blob_url nullable; baseline diperbarui. Memerlukan store private dan BLOB_READ_WRITE_TOKEN di backend. Verifikasi: 112 tes backend lolos, termasuk upload/rollback/retensi foto/privasi dan adapter Blob tiruan. Upgrade berulang serta baseline/reset lolos hanya dalam schema sintetis; koneksi ke Blob asli belum diuji.
+
 ### 2026-10-16
 
 - Wishlist: tujuh jenis daftar pribadi, grup/subtotal dan barang terpisah, prioritas/status, detail Holiday/kendaraan/gadget, serta beberapa URL foto. Link publik dapat dibuat/dicabut; reservasi wajib login, satu pemesan per barang, pembatalan hanya pemesan/pemilik, dan nama pemesan diproyeksikan hanya ke pemilik/pemesan. Route → controller → service, lima tabel relasional tanpa JSON/JSONB, migration additive 022 dan baseline terbaru. Upgrade/reset dan konflik reservasi PostgreSQL diverifikasi hanya dalam schema sintetis; data keuangan aplikasi tidak diubah. Verifikasi: 107 tes backend lolos; empat tes Wishlist mencakup CRUD/privasi/akses/status, dan PostgreSQL menguji upgrade, baseline/reset serta reservasi bersamaan.

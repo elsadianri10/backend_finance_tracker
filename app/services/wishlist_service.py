@@ -4,10 +4,19 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
+from app.services import wishlist_image_service as images
 from app.models import User
 from app.models.wishlist_model import Wishlist, WishlistGroup, WishlistItem, WishlistPhoto, WishlistReservation
 
 GIFTABLE = {'things', 'consumables', 'games', 'food'}
+
+
+def photo_url(photo, share_token=None):
+    if not photo.blob_url:
+        return photo.url
+    # A different object at the same position must refresh an already-mounted img.
+    version = hashlib.sha256(photo.blob_url.encode()).hexdigest()[:16]
+    return photo.url + '?v=' + version + ('&share=' + share_token if share_token else '')
 
 
 async def owned(list_id, user, db):
@@ -24,7 +33,7 @@ async def shared(token, db):
     return row
 
 
-async def output(lists, viewer_id, db):
+async def output(lists, viewer_id, db, share_token=None):
     groups = list(await db.scalars(select(WishlistGroup).where(WishlistGroup.wishlist_id.in_([r.id for r in lists])).order_by(WishlistGroup.name, WishlistGroup.id)))
     items = list(await db.scalars(select(WishlistItem).where(WishlistItem.group_id.in_([g.id for g in groups])).order_by(WishlistItem.name, WishlistItem.id)))
     photos = list(await db.scalars(select(WishlistPhoto).where(WishlistPhoto.item_id.in_([i.id for i in items])).order_by(WishlistPhoto.position)))
@@ -40,7 +49,7 @@ async def output(lists, viewer_id, db):
                 mine = bool(reservation and reservation[0].user_id == viewer_id)
                 value = {''.join(p.title() for p in key.split('_')): getattr(item, key) for key in (
                     'id', 'group_id', 'name', 'platform', 'brand', 'model', 'color', 'capacity', 'year', 'plate', 'country', 'province', 'city', 'notes', 'link', 'price', 'priority', 'status')}
-                value.update(Photos=[p.url for p in photos if p.item_id == item.id], Reserved=bool(reservation), Mine=mine,
+                value.update(Photos=[photo_url(p, share_token) for p in photos if p.item_id == item.id], Reserved=bool(reservation), Mine=mine,
                     ReservedBy=reservation[1] if reservation and (owner or mine) else None)
                 rendered.append(value)
             rendered_groups.append({'Id': group.id, 'Name': group.name, 'Items': rendered,
@@ -77,8 +86,10 @@ async def update(list_id, payload, user, db):
 
 async def remove(list_id, user, db):
     row = await owned(list_id, user, db)
+    blobs = await stored_photos(db, list_id=row.id)
     await db.delete(row)
     await db.commit()
+    await images.cleanup(blobs)
     return {'Ok': True}
 
 
@@ -94,15 +105,17 @@ async def change_group(list_id, group_id, payload, user, db):
     group = await db.scalar(select(WishlistGroup).where(WishlistGroup.id == group_id, WishlistGroup.wishlist_id == row.id))
     if group is None:
         raise HTTPException(404, 'Grup tidak ditemukan')
+    blobs = await stored_photos(db, group_id=group.id) if payload is None else []
     if payload is None:
         await db.delete(group)
     else:
         group.name = payload.name
     await db.commit()
+    await images.cleanup(blobs)
     return (await output([row], user.id, db))[0]
 
 
-async def save_item(list_id, item_id, payload, user, db):
+async def save_item(list_id, item_id, payload, user, db, uploads=None):
     row = await owned(list_id, user, db)
     group = await db.scalar(select(WishlistGroup).where(WishlistGroup.id == payload.group_id, WishlistGroup.wishlist_id == row.id))
     if group is None:
@@ -110,18 +123,67 @@ async def save_item(list_id, item_id, payload, user, db):
     item = await db.scalar(select(WishlistItem).join(WishlistGroup).where(WishlistItem.id == item_id, WishlistGroup.wishlist_id == row.id)) if item_id else None
     if item_id and item is None:
         raise HTTPException(404, 'Barang tidak ditemukan')
-    if item is None:
-        item = WishlistItem()
-        db.add(item)
-    for key, value in payload.model_dump(exclude={'photos'}).items():
-        setattr(item, key, value)
-    await db.flush()
-    await db.execute(delete(WishlistPhoto).where(WishlistPhoto.item_id == item.id))
-    db.add_all([WishlistPhoto(item_id=item.id, position=index, url=url) for index, url in enumerate(payload.photos)])
-    if item.status != 'wanted':
-        await db.execute(delete(WishlistReservation).where(WishlistReservation.item_id == item.id))
-    await db.commit()
+    old_photos = list(await db.scalars(select(WishlistPhoto).where(WishlistPhoto.item_id == item.id))) if item else []
+    retained = {photo_url(p): p.blob_url for p in old_photos if p.blob_url}
+    if any(url.startswith('/') and url not in retained for url in payload.photos):
+        raise HTTPException(422, 'Referensi foto tidak valid untuk barang ini')
+    if len(payload.photos) + len(uploads or []) > 6:
+        raise HTTPException(422, 'Maksimal enam foto termasuk link dan unggahan')
+    # Validate every file before writing any object or changing existing rows.
+    normalized = [images.normalize(data) for data in (uploads or [])]
+    new_blobs = []
+    try:
+        if item is None:
+            item = WishlistItem()
+            db.add(item)
+        for key, value in payload.model_dump(exclude={'photos'}).items():
+            setattr(item, key, value)
+        await db.flush()
+        for data in normalized:
+            new_blobs.append(await images.put(item.id, data))
+        entries = [(url, retained.get(url)) for url in payload.photos] + [('', url) for url in new_blobs]
+        await db.execute(delete(WishlistPhoto).where(WishlistPhoto.item_id == item.id))
+        db.add_all([WishlistPhoto(item_id=item.id, position=index,
+            url=f'/api/wishlists/images/{item.id}/{index}' if blob else url, blob_url=blob)
+            for index, (url, blob) in enumerate(entries)])
+        if item.status != 'wanted':
+            await db.execute(delete(WishlistReservation).where(WishlistReservation.item_id == item.id))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await images.cleanup(new_blobs)
+        raise
+    used = {blob for _, blob in entries if blob}
+    await images.cleanup([p.blob_url for p in old_photos if p.blob_url and p.blob_url not in used])
     return (await output([row], user.id, db))[0]
+
+
+async def photo(item_id, position, token, user, db):
+    result = (await db.execute(select(WishlistPhoto, Wishlist, WishlistItem.status)
+        .join(WishlistItem, WishlistItem.id == WishlistPhoto.item_id)
+        .join(WishlistGroup, WishlistGroup.id == WishlistItem.group_id)
+        .join(Wishlist, Wishlist.id == WishlistGroup.wishlist_id)
+        .where(WishlistPhoto.item_id == item_id, WishlistPhoto.position == position))).first()
+    if result is None:
+        raise HTTPException(404, 'Foto tidak ditemukan')
+    image, row, status = result
+    owner = user is not None and user.id == row.user_id
+    allowed = token and row.share_hash and secrets.compare_digest(hashlib.sha256(token.encode()).hexdigest(), row.share_hash)
+    if not image.blob_url or (not owner and (not allowed or status == 'archived')):
+        raise HTTPException(404, 'Foto tidak ditemukan')
+    return await images.read(image.blob_url)
+
+
+async def stored_photos(db, list_id=None, group_id=None, item_id=None):
+    query = select(WishlistPhoto.blob_url).join(WishlistItem).join(WishlistGroup)
+    if list_id:
+        query = query.where(WishlistGroup.wishlist_id == list_id)
+    if group_id:
+        query = query.where(WishlistGroup.id == group_id)
+    if item_id:
+        query = query.where(WishlistItem.id == item_id)
+    return [url for url in await db.scalars(query) if url]
+
 
 
 async def remove_item(list_id, item_id, user, db):
@@ -129,8 +191,10 @@ async def remove_item(list_id, item_id, user, db):
     item = await db.scalar(select(WishlistItem).join(WishlistGroup).where(WishlistItem.id == item_id, WishlistGroup.wishlist_id == row.id))
     if item is None:
         raise HTTPException(404, 'Barang tidak ditemukan')
+    blobs = await stored_photos(db, item_id=item.id)
     await db.delete(item)
     await db.commit()
+    await images.cleanup(blobs)
     return (await output([row], user.id, db))[0]
 
 
@@ -152,7 +216,7 @@ async def revoke(list_id, user, db):
 
 async def public(token, user, db):
     row = await shared(token, db)
-    return (await output([row], user.id if user else None, db))[0]
+    return (await output([row], user.id if user else None, db, token))[0]
 
 
 async def reserve(list_id, token, item_id, cancel, user, db):
@@ -181,4 +245,4 @@ async def reserve(list_id, token, item_id, cancel, user, db):
     except IntegrityError:
         await db.rollback()
         raise HTTPException(409, 'Barang sudah direservasi. Muat ulang Wishlist.')
-    return (await output([row], user.id, db))[0]
+    return (await output([row], user.id, db, token))[0]

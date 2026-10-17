@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-022.
--- New/empty database: run this file only. Do NOT run 001-022 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-023.
+-- New/empty database: run this file only. Do NOT run 001-023 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -494,6 +494,7 @@ CREATE TABLE IF NOT EXISTS wishlist_photos (
 	item_id UUID NOT NULL,
 	position INTEGER NOT NULL,
 	url VARCHAR(2048) NOT NULL,
+	blob_url VARCHAR(2048),
 	PRIMARY KEY (item_id, position),
 	FOREIGN KEY(item_id) REFERENCES wishlist_items (id) ON DELETE CASCADE
 );
@@ -520,9 +521,10 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 022.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 023.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
+        ('wishlist_photos', 'blob_url'),
         ('users', 'auth_version'),
         ('savings', 'opening_amount'),
         ('savings', 'metal_type'),
@@ -554,7 +556,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 022.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 023.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
