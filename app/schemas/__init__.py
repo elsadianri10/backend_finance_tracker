@@ -14,6 +14,7 @@ from .savings_schema import SavingCreate, MovementCreate, MovementResponse, Savi
 from .split_bill_schema import Participant, ItemShare, BillItem, Charge, Expense, GroupCreate, GroupUpdate
 
 if TYPE_CHECKING:
+    from . import stock_schema
     from . import wishlist_schema
     from . import transaction_export_schema
     from . import passkey_schema
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "stock_schema",
     "wishlist_schema",
     "transaction_export_schema",
     "passkey_schema",
