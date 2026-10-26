@@ -4,6 +4,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from . import stock_service
     from . import wishlist_image_service
     from . import wishlist_service
     from . import transaction_export_service
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "stock_service",
     "wishlist_image_service",
     "wishlist_service",
     "transaction_export_service",

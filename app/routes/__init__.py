@@ -1,3 +1,4 @@
+from .stock_route import router as stock_router
 from .transaction_export_route import router as transaction_export_router
 from .wishlist_route import router as wishlist_router
 from .passkey_route import router as passkey_router
@@ -12,6 +13,7 @@ from .split_bill_route import router as split_bill_router
 from .summary_route import router as summary_router
 
 __all__ = [
+    'stock_router',
     'wishlist_router',
     "transaction_export_router",
     "passkey_router",

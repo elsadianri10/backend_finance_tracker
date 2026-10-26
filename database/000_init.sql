@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-023.
--- New/empty database: run this file only. Do NOT run 001-023 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-024.
+-- New/empty database: run this file only. Do NOT run 001-024 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -510,6 +510,78 @@ CREATE TABLE IF NOT EXISTS wishlist_reservations (
 );
 CREATE INDEX IF NOT EXISTS ix_wishlist_reservations_user_id ON wishlist_reservations (user_id);
 
+CREATE TABLE IF NOT EXISTS stock_needs (
+	id UUID NOT NULL,
+	user_id UUID NOT NULL,
+	name VARCHAR(150) NOT NULL,
+	category VARCHAR(20) NOT NULL,
+	subcategory VARCHAR(60) NOT NULL,
+	mode VARCHAR(20) NOT NULL,
+	reserve_threshold INTEGER NOT NULL,
+	next_review DATE,
+	snoozed_until DATE,
+	paused BOOLEAN NOT NULL,
+	archived BOOLEAN NOT NULL,
+	buy_requested BOOLEAN NOT NULL,
+	notes VARCHAR(2000) NOT NULL,
+	version INTEGER NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT ck_stock_category CHECK (category IN ('health','consumption','beauty')),
+	CONSTRAINT ck_stock_mode CHECK (mode IN ('monthly','low_stock','manual')),
+	CONSTRAINT ck_stock_need_limits CHECK (reserve_threshold BETWEEN 0 AND 10000 AND version > 0),
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ix_stock_need_owner ON stock_needs (user_id);
+
+CREATE TABLE IF NOT EXISTS stock_products (
+	id UUID NOT NULL,
+	need_id UUID NOT NULL,
+	brand VARCHAR(150) NOT NULL,
+	variant VARCHAR(150) NOT NULL,
+	package_unit VARCHAR(40) NOT NULL,
+	package_size VARCHAR(100) NOT NULL,
+	preference VARCHAR(10) NOT NULL,
+	active_count INTEGER NOT NULL,
+	reserve_count INTEGER NOT NULL,
+	near_empty BOOLEAN NOT NULL,
+	opened_on DATE,
+	archived BOOLEAN NOT NULL,
+	version INTEGER NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT ck_stock_preference CHECK (preference IN ('staple','trial')),
+	CONSTRAINT ck_stock_counts CHECK (active_count BETWEEN 0 AND 10000 AND reserve_count BETWEEN 0 AND 10000 AND version > 0),
+	FOREIGN KEY(need_id) REFERENCES stock_needs (id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ix_stock_product_need ON stock_products (need_id);
+
+CREATE TABLE IF NOT EXISTS stock_events (
+	id UUID NOT NULL,
+	user_id UUID NOT NULL,
+	product_id UUID NOT NULL,
+	kind VARCHAR(10) NOT NULL,
+	event_date DATE NOT NULL,
+	quantity INTEGER NOT NULL,
+	active_delta INTEGER NOT NULL,
+	reserve_delta INTEGER NOT NULL,
+	brand VARCHAR(150) NOT NULL,
+	variant VARCHAR(150) NOT NULL,
+	amount BIGINT,
+	store VARCHAR(150) NOT NULL,
+	notes VARCHAR(2000) NOT NULL,
+	transaction_id UUID,
+	request_id UUID NOT NULL,
+	request_hash VARCHAR(64) NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_stock_request UNIQUE (user_id, request_id),
+	CONSTRAINT ck_stock_event_kind CHECK (kind IN ('purchase','open','finish','adjust')),
+	CONSTRAINT ck_stock_event_amount CHECK (quantity BETWEEN 0 AND 10000 AND (amount IS NULL OR amount BETWEEN 0 AND 1000000000000)),
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE,
+	FOREIGN KEY(product_id) REFERENCES stock_products (id) ON DELETE CASCADE,
+	FOREIGN KEY(transaction_id) REFERENCES ledger_transactions (id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_stock_event_product ON stock_events (product_id, event_date);
+
 DO $$
 DECLARE required_column RECORD;
 BEGIN
@@ -521,10 +593,11 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 023.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 024.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('wishlist_photos', 'blob_url'),
+        ('stock_needs', 'version'),
         ('users', 'auth_version'),
         ('savings', 'opening_amount'),
         ('savings', 'metal_type'),
@@ -556,7 +629,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 023.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 024.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
@@ -565,7 +638,7 @@ END $$;
 DO $$
 BEGIN
     IF current_setting('finance_tracker.reset')::boolean THEN
-        TRUNCATE TABLE wishlist_reservations, wishlist_photos, wishlist_items, wishlist_groups, wishlists, user_passkeys, passkey_challenges, passkey_recovery_codes, ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
+        TRUNCATE TABLE stock_events, stock_products, stock_needs, wishlist_reservations, wishlist_photos, wishlist_items, wishlist_groups, wishlists, user_passkeys, passkey_challenges, passkey_recovery_codes, ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
             RESTART IDENTITY;
     END IF;
 END $$;

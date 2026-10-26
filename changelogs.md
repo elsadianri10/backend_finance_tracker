@@ -11,6 +11,10 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-26
+
+- Menu Stok Kebutuhan: kategori Kesehatan, Konsumsi, Beauty & Body Care; produk/brand andalan atau percobaan; stok per kemasan dipakai/cadangan; penggunaan kemasan, pengingat bulanan/stok menipis/manual, lewati bulan/jeda dan arsip. Riwayat pembelian/penyesuaian; pengeluaran opsional disimpan atomik dengan stok, pemeriksaan kepemilikan rekening, versi data dan retry idempotent. Tiga tabel relasional baru melalui migration additive 024; baseline/barrel exports diperbarui. Panduan docs/stock-needs.md. Verifikasi: 117 tes backend lolos; upgrade/baseline/reset dan konflik pembelian PostgreSQL diuji dalam schema sintetis, tanpa mengubah database aplikasi.
+
 ### 2026-10-17
 
 - Wishlist mendukung upload foto JPG/PNG/WebP ke Vercel Blob private selain link, maksimal enam foto gabungan. Validasi isi/ukuran, konversi WebP tanpa metadata, simpan atomik, cleanup file, serta akses pemilik/link berbagi aktif dengan respons tanpa cache. Migration additive 023 menambah blob_url nullable; baseline diperbarui. Memerlukan store private dan BLOB_READ_WRITE_TOKEN di backend. Verifikasi: 112 tes backend lolos, termasuk upload/rollback/retensi foto/privasi dan adapter Blob tiruan. Upgrade berulang serta baseline/reset lolos hanya dalam schema sintetis; koneksi ke Blob asli belum diuji.
