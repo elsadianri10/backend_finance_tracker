@@ -11,7 +11,15 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-27
+
+- Stok Kebutuhan: override beli ulang per produk (jeda, lewati bulan berjalan sampai tanggal 1 bulan berikutnya, aktifkan lagi) pada kolom bertipe dengan default lama tetap aktif. Endpoint memeriksa pemilik/induk/versi/status arsip. Pengingat mengecualikan produk yang tidak eligible; kontrol induk tetap berlaku, stok/history/ledger tidak berubah. Migration additive 025 dan baseline terbaru; upgrade berulang pada data terisi diuji hanya di schema sintetis.
+
+- Stok Kebutuhan: hapus permanen per produk yang diarsipkan, dengan pemeriksaan kepemilikan/versi/nama produk. Hanya produk dan riwayatnya dihapus; kebutuhan, produk lain dan seluruh transaksi keuangan tetap tersimpan. Tidak memerlukan migration baru. Verifikasi: tujuh tes stok dan cascade PostgreSQL pada schema sintetis lolos.
+
 ### 2026-10-26
+
+- Stok Kebutuhan: DELETE hanya untuk kebutuhan yang diarsipkan, wajib konfirmasi nama persis dan versi data terbaru. Produk/stok/riwayat terhapus melalui FK cascade; seluruh transaksi keuangan tetap tersimpan. Kepemilikan, restore dari tab lain dan pelestarian ledger diuji; cascade diverifikasi di PostgreSQL schema sintetis. Tidak membutuhkan migration baru.
 
 - Menu Stok Kebutuhan: kategori Kesehatan, Konsumsi, Beauty & Body Care; produk/brand andalan atau percobaan; stok per kemasan dipakai/cadangan; penggunaan kemasan, pengingat bulanan/stok menipis/manual, lewati bulan/jeda dan arsip. Riwayat pembelian/penyesuaian; pengeluaran opsional disimpan atomik dengan stok, pemeriksaan kepemilikan rekening, versi data dan retry idempotent. Tiga tabel relasional baru melalui migration additive 024; baseline/barrel exports diperbarui. Panduan docs/stock-needs.md. Verifikasi: 117 tes backend lolos; upgrade/baseline/reset dan konflik pembelian PostgreSQL diuji dalam schema sintetis, tanpa mengubah database aplikasi.
 

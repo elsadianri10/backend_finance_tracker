@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 from check_debt_installment_migration import engine, snapshot
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import User, StockNeed, StockProduct
-from app.schemas.stock_schema import PurchaseInput
+from app.schemas.stock_schema import PurchaseInput, NeedAction, DeleteNeedInput, ProductInput, DeleteProductInput
 from app.services import stock_service
 from fastapi import HTTPException
 
@@ -31,6 +31,9 @@ async def check():
             upgrade = (ROOT/'database/024_stock_needs.sql').read_text(encoding='utf-8')
             await db.execute(upgrade)
             await db.execute(upgrade)
+            overrides = (ROOT/'database/025_stock_product_replenishment.sql').read_text(encoding='utf-8')
+            await db.execute(overrides)
+            await db.execute(overrides)
             assert before == await snapshot(db, tables)
             async with AsyncSession(bind=connection, expire_on_commit=False) as session:
                 need = StockNeed(user_id=owner_id, name='Synthetic', category='health', subcategory='vitamins', mode='monthly', next_review=date(2026,10,1))
@@ -57,15 +60,51 @@ async def check():
             assert await db.fetchval('SELECT COUNT(*) FROM stock_events') == 1
             assert await db.fetchval('SELECT COUNT(*) FROM ledger_transactions') == 1
             populated = tables + ['stock_needs', 'stock_products', 'stock_events']
+            # Simulate populated 024 layout; 025 must preserve every old column.
+            await db.execute('ALTER TABLE stock_products DROP COLUMN replenishment_paused, DROP COLUMN replenishment_snoozed_until')
+            legacy = await snapshot(db, populated)
+            await db.execute(overrides)
+            await db.execute(overrides)
+            upgraded = await snapshot(db, populated)
+            for row in upgraded['stock_products']:
+                assert row.pop('replenishment_paused') is False
+                assert row.pop('replenishment_snoozed_until') is None
+            assert upgraded == legacy
+            await db.execute("UPDATE stock_products SET replenishment_paused=true,replenishment_snoozed_until='2026-11-01'")
+            overridden = await snapshot(db, populated)
+            await db.execute(overrides)
+            assert overridden == await snapshot(db, populated)
             existing = await snapshot(db, populated)
             await db.execute(upgrade)
             assert existing == await snapshot(db, populated)
+            financial_before_delete = await snapshot(db, tables)
+            async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                user = await session.get(User, owner_id)
+                need = await session.get(StockNeed, need_id)
+                product = await session.get(StockProduct, product_id)
+                await stock_service.save_product(need_id, product_id, ProductInput.model_validate({
+                    'RequestId': uuid4(), 'Version': product.version, 'Brand': 'Test', 'Variant': '30', 'Archived': True}), user, session)
+                session.add(StockProduct(need_id=need_id, brand='Keep', variant='', package_unit='botol', package_size='', preference='staple'))
+                await session.commit()
+                await stock_service.remove_product(need_id, product_id, DeleteProductInput.model_validate({
+                    'Version': product.version, 'ConfirmationName': 'Test 30'}), user, session)
+                assert await db.fetchval('SELECT COUNT(*) FROM stock_products') == 1
+                assert await db.fetchval('SELECT COUNT(*) FROM stock_events') == 0
+                assert financial_before_delete == await snapshot(db, tables)
+                archived = await stock_service.control(need_id, NeedAction.model_validate({'Version': need.version, 'Action': 'archive'}), user, session)
+                await stock_service.remove(need_id, DeleteNeedInput.model_validate({'Version': archived['Version'], 'ConfirmationName': 'Synthetic'}), user, session)
+                # Leave a fresh row to exercise baseline reset after the cascade check.
+                assert await db.fetchval('SELECT COUNT(*) FROM stock_products') == 0
+                assert await db.fetchval('SELECT COUNT(*) FROM stock_events') == 0
+                assert financial_before_delete == await snapshot(db, tables)
+                session.add(StockNeed(user_id=owner_id, name='Reset check', category='health', subcategory='vitamins', mode='manual'))
+                await session.commit()
             await db.execute('CREATE TABLE stock_sentinel(value INTEGER); INSERT INTO stock_sentinel VALUES(42)')
             await db.execute(baseline)
             for table in ('stock_needs','stock_products','stock_events'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
             assert await db.fetchval('SELECT value FROM stock_sentinel') == 42
-            print('PASS: 024 repeated upgrade preserves old/populated data; simultaneous purchases produce one stock change and one expense; retry is idempotent; baseline/reset succeeds only in synthetic schema.')
+            print('PASS: repeated upgrade, competing/idempotent purchase, archived cascade delete preserves all financial data, baseline/reset; synthetic schema only.')
         finally:
             await db.execute('ROLLBACK; SET search_path TO public')
             await db.execute(f'DROP SCHEMA "{schema}" CASCADE')

@@ -50,6 +50,9 @@ class StockProduct(Base):
     archived: Mapped[bool] = mapped_column(default=False)
     version: Mapped[int] = mapped_column(default=1)
 
+    replenishment_paused: Mapped[bool] = mapped_column(default=False, server_default='false')
+    replenishment_snoozed_until: Mapped[date | None]
+
 
 class StockEvent(Base):
     __tablename__ = 'stock_events'

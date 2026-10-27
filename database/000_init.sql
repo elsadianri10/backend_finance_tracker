@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-024.
--- New/empty database: run this file only. Do NOT run 001-024 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-025.
+-- New/empty database: run this file only. Do NOT run 001-025 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -547,6 +547,8 @@ CREATE TABLE IF NOT EXISTS stock_products (
 	opened_on DATE,
 	archived BOOLEAN NOT NULL,
 	version INTEGER NOT NULL,
+	replenishment_paused BOOLEAN DEFAULT false NOT NULL,
+	replenishment_snoozed_until DATE,
 	PRIMARY KEY (id),
 	CONSTRAINT ck_stock_preference CHECK (preference IN ('staple','trial')),
 	CONSTRAINT ck_stock_counts CHECK (active_count BETWEEN 0 AND 10000 AND reserve_count BETWEEN 0 AND 10000 AND version > 0),
@@ -593,11 +595,13 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 024.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 025.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('wishlist_photos', 'blob_url'),
         ('stock_needs', 'version'),
+        ('stock_products', 'replenishment_paused'),
+        ('stock_products', 'replenishment_snoozed_until'),
         ('users', 'auth_version'),
         ('savings', 'opening_amount'),
         ('savings', 'metal_type'),
@@ -629,7 +633,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 024.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 025.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
