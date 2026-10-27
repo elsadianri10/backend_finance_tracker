@@ -18,12 +18,19 @@ def fields(row, names):
     return {''.join(part.title() for part in key.split('_')): getattr(row, key) for key in names.split()}
 
 
+def product_reminder_active(product, day):
+    return not product.archived and not product.replenishment_paused and (
+        product.replenishment_snoozed_until is None or product.replenishment_snoozed_until <= day)
+
+
 def reason(need, products, day):
     if need.archived or need.paused or need.snoozed_until and need.snoozed_until > day:
         return None
+    available = [p for p in products if product_reminder_active(p, day)]
+    if products and not available:
+        return None
     if need.buy_requested:
         return 'requested'
-    available = [p for p in products if not p.archived]
     if any(p.near_empty for p in available) and sum(p.reserve_count for p in available) == 0:
         return 'near_empty'
     if need.mode == 'monthly' and need.next_review and need.next_review <= day:
@@ -36,11 +43,14 @@ def reason(need, products, day):
 async def output(needs, db):
     products = list(await db.scalars(select(StockProduct).where(StockProduct.need_id.in_([n.id for n in needs])).order_by(StockProduct.brand, StockProduct.variant, StockProduct.id)))
     result = []
+    day = today()
     for need in needs:
         own = [p for p in products if p.need_id == need.id]
         value = fields(need, 'id name category subcategory mode reserve_threshold next_review snoozed_until paused archived buy_requested notes version')
-        value['Products'] = [fields(p, 'id brand variant package_unit package_size preference active_count reserve_count near_empty opened_on archived version') for p in own]
-        value['BuyReason'] = reason(need, own, today())
+        parent_active = not need.archived and not need.paused and (need.snoozed_until is None or need.snoozed_until <= day)
+        value['Products'] = [fields(p, 'id brand variant package_unit package_size preference active_count reserve_count near_empty opened_on archived version replenishment_paused replenishment_snoozed_until') |
+            {'ReplenishmentEligible': parent_active and product_reminder_active(p, day)} for p in own]
+        value['BuyReason'] = reason(need, own, day)
         result.append(value)
     return result
 
@@ -80,6 +90,19 @@ async def save_need(need_id, payload, user, db):
         setattr(need, key, value)
     await db.commit()
     return await one(need, db)
+
+
+async def remove(need_id, payload, user, db):
+    need = await owned(need_id, user, db)
+    version(need, payload.version)
+    if not need.archived:
+        raise HTTPException(409, 'Arsipkan kebutuhan sebelum menghapus permanen')
+    if payload.confirmation_name != need.name:
+        raise HTTPException(422, 'Nama konfirmasi harus sama persis dengan nama kebutuhan')
+    # FK cascade removes products/events only. Ledger entries remain independent.
+    await db.delete(need)
+    await db.commit()
+    return {'DeletedId': need_id}
 
 
 async def control(need_id, payload, user, db):
@@ -130,6 +153,43 @@ async def product_for(need, product_id, db):
     if product is None:
         raise HTTPException(404, 'Produk tidak ditemukan')
     return product
+
+
+async def remove_product(need_id, product_id, payload, user, db):
+    need = await owned(need_id, user, db)
+    product = await product_for(need, product_id, db)
+    version(product, payload.version)
+    if not product.archived:
+        raise HTTPException(409, 'Arsipkan produk sebelum menghapus permanen')
+    name = ' '.join(part.strip() for part in (product.brand, product.variant) if part.strip()) or product.package_unit.strip()
+    if payload.confirmation_name != name:
+        raise HTTPException(422, 'Nama konfirmasi harus sama persis dengan nama produk')
+    # Only this product and its events cascade; the parent and all ledgers remain.
+    await db.delete(product)
+    need.version += 1
+    await db.commit()
+    return await one(need, db)
+
+
+async def product_replenishment(need_id, product_id, payload, user, db):
+    need = await owned(need_id, user, db)
+    product = await product_for(need, product_id, db)
+    version(product, payload.version)
+    if need.archived or product.archived:
+        raise HTTPException(409, 'Pulihkan kebutuhan/produk sebelum mengatur beli ulang')
+    if payload.action == 'pause':
+        product.replenishment_paused = True
+    elif payload.action == 'resume':
+        product.replenishment_paused = False
+        product.replenishment_snoozed_until = None
+    else:
+        if need.mode != 'monthly':
+            raise HTTPException(422, 'Lewati bulan ini tersedia untuk pengingat bulanan')
+        product.replenishment_snoozed_until = add_months(today().replace(day=1), 1)
+    product.version += 1
+    need.version += 1
+    await db.commit()
+    return await one(need, db)
 
 
 def event_row(need, product, payload, digest, kind, active_delta, reserve_delta, **extra):

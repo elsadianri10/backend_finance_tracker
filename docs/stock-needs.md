@@ -27,9 +27,9 @@ Riwayat menampilkan 100 kejadian terbaru per kebutuhan, termasuk penyesuaian sto
 
 ## API dan database
 
-Route decorator FastAPI → controller → service. `/stock-needs`: GET/POST; `/{id}`: PATCH; `/{id}/actions`: POST; `/{id}/products`: POST; `/{id}/products/{productId}`: PATCH; `/{id}/products/{productId}/actions` dan `/purchases`: POST; `/{id}/history`: GET. Semua memerlukan sesi login/passkey dan pemeriksaan kepemilikan ID induk/anak. Tidak tersedia link berbagi publik untuk stok. Proxy frontend menerapkan pemeriksaan origin, sesi, whitelist route dan respons no-store.
+Route decorator FastAPI → controller → service. `/stock-needs`: GET/POST; `/{id}`: PATCH/DELETE; `/{id}/actions`: POST; `/{id}/products`: POST; `/{id}/products/{productId}`: PATCH; `/{id}/products/{productId}/actions` dan `/purchases`: POST; `/{id}/history`: GET. Semua memerlukan sesi login/passkey dan pemeriksaan kepemilikan ID induk/anak. Tidak tersedia link berbagi publik untuk stok. Proxy frontend menerapkan pemeriksaan origin, sesi, whitelist route dan respons no-store.
 
-Tiga tabel relasional bertipe: stock_needs, stock_products, stock_events. Tidak ada JSON/JSONB untuk data aplikasi. Tidak ada penghapusan permanen melalui UI; arsip menjaga riwayat.
+Tiga tabel relasional bertipe: stock_needs, stock_products, stock_events. Tidak ada JSON/JSONB untuk data aplikasi. Hapus Permanen hanya tersedia untuk kebutuhan yang sudah diarsipkan. Konfirmasi meminta nama kebutuhan persis dan versi data terkini; kebutuhan yang dipulihkan/diubah dari tab lain ditolak. Penghapusan menghapus kebutuhan, seluruh produk, stok dan riwayatnya melalui FK cascade, tanpa menghapus/membatalkan ledger pengeluaran. Tindakan tidak dapat dipulihkan.
 
 ## Deployment dan verifikasi
 
@@ -44,3 +44,22 @@ Verifikasi migrasi dilakukan hanya di schema sintetis acak yang dibuang, termasu
 ```
 
 Frontend: npm run test:stock-needs, npx tsc --noEmit, lint file terkait, npm run build. Pratinjau memakai npm run test:stock-needs -- --preview dengan akun/data tiruan.
+
+Hapus permanen tidak membutuhkan migration baru: FK cascade dari migration 024 sudah tersedia. Deploy backend dan frontend bersama. Uji DELETE mencakup izin pemilik, wajib arsip, nama/versi konfirmasi, restore dari tab lain, cascade pada PostgreSQL, dan pelestarian seluruh kolom transaksi serta record keuangan lain di schema sintetis.
+
+## Produk diarsipkan dan penanda stok habis
+
+Produk yang diarsipkan memiliki tombol Hapus Produk Permanen. DELETE /stock-needs/{need_id}/products/{product_id} memerlukan versi produk dan ConfirmationName berupa brand + varian yang masing-masing di-trim dan dipisah satu spasi; jika keduanya kosong memakai satuan kemasan. Produk aktif ditolak, akses harus milik pemilik kebutuhan, dan nama harus sama persis. Hanya produk terpilih beserta event/riwayatnya yang dihapus. Kebutuhan induk, produk saudara dan semua ledger pengeluaran dipertahankan. UI meminta mengetik nama, kemudian memperbarui kebutuhan hasil respons. Tidak membutuhkan perubahan schema.
+
+Label merah Stok Habis tampil ketika sebuah produk aktif memiliki dipakai=0 dan cadangan=0; untuk kebutuhan tampil hanya jika seluruh produk aktifnya kosong. Produk yang diarsipkan tidak ikut dihitung dan tidak diberi alert stok habis. Ini penanda visual dari data stok yang sudah dimuat: pola manual/bulanan, jeda dan daftar belanja ulang tetap mengikuti aturan semula. Label produk Diarsipkan memakai badge kontras dengan ring/latar/teks khusus mode gelap; tidak ada opacity yang meredupkan seluruh baris.
+
+
+## Jeda dan lewati bulan per produk (migration 025)
+
+POST `/stock-needs/{need_id}/products/{product_id}/replenishment` menerima `Version` versi produk dan `Action` pause/resume/skip. Kolom `replenishment_paused` default false dan `replenishment_snoozed_until` nullable menyimpan override terpisah dari induk. Tidak mengubah stok, tanggal buka, produk saudara, catatan pemakaian/pembelian, atau transaksi. Versi produk dan kebutuhan diperbarui untuk mencegah perubahan dari tab lama menimpa pengaturan. Edit Produk tidak mereset override ini. Catat Pembelian tetap dapat digunakan saat dijeda tanpa mengaktifkan pengingat produk kembali secara otomatis.
+
+Jeda produk berlaku sampai Aktifkan Lagi Produk. Lewati Produk Bulan Ini hanya tersedia untuk pola bulanan dan berakhir pada tanggal 1 bulan berikutnya (WIB); sesudah itu pengingat kembali mengikuti jadwal induk. Aktifkan Lagi Produk membersihkan jeda dan penundaan produk itu saja. Jika induk dijeda/diarsipkan/dilewati, pengingat semua produk tetap nonaktif meskipun satu produk diaktifkan lagi. Mengaktifkan induk tidak menghapus pilihan jeda tiap produk.
+
+Respons produk menyertakan ReplenishmentEligible; pengingat hanya menghitung produk eligible. Bila seluruh produk diarsipkan/dijeda/dilewati, kebutuhan tidak masuk belanja ulang. Pada Daftar Belanja Ulang, kartu menampilkan hanya produk eligible; tab Semua tetap menampilkan seluruh produk beserta badge jeda/penundaan. Tab Dijeda mencakup kebutuhan dengan produk yang dijeda/dilewati. Penanda visual Stok Habis tetap mengikuti jumlah fisik, terpisah dari pengingat beli ulang.
+
+Untuk database yang sudah melalui 024, jalankan **hanya database/025_stock_product_replenishment.sql**, lalu deploy backend dan frontend. Migration dapat diulang dan tidak mereset data/override lama. Baseline 000 sudah mencakup 025; jangan gunakan 000 untuk upgrade database berisi data. Uji pelestarian kolom lama, default awal dan nilai override yang sudah terisi ada di tests/check_stock_migration.py, hanya pada schema sintetis. Tidak ada migration pada database aplikasi dari pemeriksaan ini.

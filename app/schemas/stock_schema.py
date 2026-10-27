@@ -70,6 +70,15 @@ class ProductInput(PascalModel):
         return self
 
 
+class DeleteNeedInput(PascalModel):
+    version: int = Field(strict=True, gt=0)
+    confirmation_name: str = Field(min_length=1, max_length=150)
+
+
+class DeleteProductInput(DeleteNeedInput):
+    confirmation_name: str = Field(min_length=1, max_length=301)
+
+
 class NeedAction(PascalModel):
     version: int = Field(strict=True, gt=0)
     action: Literal['pause', 'resume', 'skip', 'request', 'cancel_request', 'archive', 'restore']
@@ -81,6 +90,11 @@ class ProductAction(PascalModel):
     action: Literal['open', 'finish', 'near_empty', 'not_near_empty']
     event_date: date = Field(ge=date(2000, 1, 1), le=date(2099, 12, 31))
     open_next: bool = True
+
+
+class ProductReplenishmentInput(PascalModel):
+    version: int = Field(strict=True, gt=0)
+    action: Literal['pause', 'resume', 'skip']
 
 
 class PurchaseInput(PascalModel):
