@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Response
 from app.controllers import debt_controller as controller
-from app.schemas.debt_schema import DebtResponse, DebtCreate, PaymentCreate, InstallmentsUpdate
+from app.schemas.debt_schema import DebtResponse, PaymentResult, DebtCreate, PaymentCreate, InstallmentsUpdate
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.db_config import get_db
 from app.controllers.auth_controller import get_current_user
@@ -60,7 +60,7 @@ async def delete(
     return await controller.delete(debt_id=debt_id, user=user, db=db)
 
 
-@router.post('/{debt_id}/payments', response_model=DebtResponse, status_code=201)
+@router.post('/{debt_id}/payments', response_model=PaymentResult, status_code=201)
 async def pay(
     debt_id: UUID,
     payload: PaymentCreate,

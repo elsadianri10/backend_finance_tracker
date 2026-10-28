@@ -343,7 +343,7 @@ async def linked_transaction(payload, user_id, db):
         bank = payload.destination_bank_id if expected == 'income' else payload.source_bank_id
         await debt_service.add_payment(item.id, PaymentCreate.model_validate({
             'RequestId': payload.request_id, 'Amount': payload.amount, 'PaymentDate': payload.transaction_date,
-            'Notes': payload.notes, 'BankAccountId': bank}), user_id, db, commit=False)
+            'Notes': payload.notes, 'BankAccountId': bank, 'SavingId': payload.saving_id}), user_id, db, commit=False)
         payment = await db.scalar(select(DebtPayment).where(DebtPayment.debt_id == item.id, DebtPayment.request_id == payload.request_id))
         return await debt_ledger(item, payment, user_id, db, bank)
     if payload.billing_installment_id:

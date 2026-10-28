@@ -44,6 +44,7 @@ class PaymentCreate(PascalModel):
     payment_date: date
     notes: str = Field(default="", max_length=2000)
     bank_account_id: UUID | None = None
+    saving_id: UUID | None = None
 
 
 class PaymentResponse(PascalModel):
@@ -103,3 +104,7 @@ class DebtResponse(PascalModel):
     next_interest_date: date | None
     payments: list[PaymentResponse]
     interest_charges: list[InterestChargeResponse]
+
+
+class PaymentResult(DebtResponse):
+    saving_updated: bool = False

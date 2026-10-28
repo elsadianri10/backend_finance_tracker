@@ -97,8 +97,10 @@ class TransactionInput(PascalModel):
 
     @model_validator(mode='after')
     def transfer_banks(self):
-        if sum(bool(value) for value in (self.debt_id, self.billing_installment_id, self.routine_plan_id, self.saving_id)) > 1:
+        if sum(bool(value) for value in (self.debt_id, self.billing_installment_id, self.routine_plan_id)) > 1:
             raise ValueError('Pilih satu penghubung pembayaran')
+        if self.saving_id and (self.billing_installment_id or self.routine_plan_id):
+            raise ValueError('Savings dapat digabung hanya dengan Hutang/Piutang')
         if any((self.debt_id, self.billing_installment_id, self.routine_plan_id, self.saving_id)) and not self.request_id:
             raise ValueError('RequestId wajib untuk pencatatan tertaut')
         if self.routine_plan_id and not self.routine_sequence:
