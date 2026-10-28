@@ -11,6 +11,10 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-10-28
+
+- Pembayaran utang dan pengembalian piutang dapat ditautkan ke Savings Tabungan Uang melalui SavingId opsional, dari menu Hutang & Piutang maupun Transaksi. Satu commit mencatat pembayaran, satu ledger, dan satu mutasi Savings (REMOVE/ADD), memakai relasi yang sudah ada tanpa migrasi baru. Validasi pemilik, jenis simpanan, rekening, saldo dan tanggal berlaku; kegagalan membatalkan seluruh perubahan. Pengiriman ulang tidak menggandakan catatan dan menolak perubahan target pada RequestId yang sama. Pembayaran lama tidak otomatis ditautkan ulang. Respons pembayaran menyertakan SavingUpdated agar frontend memuat ulang Savings hanya jika terpengaruh.
+
 ### 2026-10-27
 
 - Stok Kebutuhan: override beli ulang per produk (jeda, lewati bulan berjalan sampai tanggal 1 bulan berikutnya, aktifkan lagi) pada kolom bertipe dengan default lama tetap aktif. Endpoint memeriksa pemilik/induk/versi/status arsip. Pengingat mengecualikan produk yang tidak eligible; kontrol induk tetap berlaku, stok/history/ledger tidak berubah. Migration additive 025 dan baseline terbaru; upgrade berulang pada data terisi diuji hanya di schema sintetis.

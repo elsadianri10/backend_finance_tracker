@@ -248,10 +248,33 @@ async def delete(debt_id, user_id, db):
     await db.commit()
 
 
+async def sync_payment(item, payment, payload, user_id, db, repeat=False):
+    from uuid import uuid5
+    from app.models.routine_model import LedgerTransaction
+    from app.models.savings_model import SavingMovement
+    from app.services.payment_sync_service import debt_ledger
+    from app.services.savings_sync_service import apply_movement
+    row = await db.scalar(select(LedgerTransaction).where(LedgerTransaction.debt_payment_id == payment.id))
+    if row is not None:
+        movement = await db.get(SavingMovement, row.saving_movement_id) if row.saving_movement_id else None
+        actual_bank = row.destination_bank_id if item.kind == 'RECEIVABLE' else row.source_bank_id
+        if row.voided_at or actual_bank != payload.bank_account_id or (movement.saving_id if movement else None) != payload.saving_id:
+            raise HTTPException(409, 'RequestId sudah digunakan dengan rekening atau Savings berbeda')
+    elif repeat and payload.saving_id:
+        raise HTTPException(409, 'Pembayaran lama tidak dapat ditautkan ulang ke Savings')
+    row = await debt_ledger(item, payment, user_id, db, payload.bank_account_id)
+    if payload.saving_id and not row.saving_movement_id:
+        await apply_movement(row, payload.saving_id, 'ADD' if item.kind == 'RECEIVABLE' else 'REMOVE', uuid5(payment.id, 'debt-saving'), user_id, db)
+        await db.flush()
+    return row
+
+
 async def add_payment(debt_id, payload, user_id, db, commit=True, sync=True):
-    from app.services.payment_sync_service import lock_owner, debt_ledger
+    from app.services.payment_sync_service import lock_owner
     from app.services.routine_service import bank_label
     await lock_owner(user_id, db)
+    if payload.saving_id and not sync:
+        invalid("SavingId", "Pembayaran Savings harus dicatat bersama Transaksi")
     await bank_label(payload.bank_account_id, user_id, db)
     item = await owned(debt_id, user_id, db, lock=True)
     payments = await payments_for(item, db)
@@ -260,7 +283,7 @@ async def add_payment(debt_id, payload, user_id, db, commit=True, sync=True):
         if (int(previous.amount), previous.payment_date, previous.notes) != (payload.amount, payload.payment_date, payload.notes):
             raise HTTPException(409, "RequestId already used for a different payment")
         if sync:
-            await debt_ledger(item, previous, user_id, db, payload.bank_account_id)
+            await sync_payment(item, previous, payload, user_id, db, repeat=True)
             if commit:
                 await db.commit()
         return ledger(item, payments)
@@ -270,11 +293,11 @@ async def add_payment(debt_id, payload, user_id, db, commit=True, sync=True):
     at_payment = ledger(item, payments, payload.payment_date)
     if payload.amount > at_payment["RemainingAmount"]:
         invalid("Amount", "Nominal melebihi sisa pada tanggal pembayaran")
-    payment = DebtPayment(debt_id=item.id, sequence=len(payments) + 1, **payload.model_dump(exclude={'bank_account_id'}))
+    payment = DebtPayment(debt_id=item.id, sequence=len(payments) + 1, **payload.model_dump(exclude={'bank_account_id', 'saving_id'}))
     db.add(payment)
     await db.flush()
     if sync:
-        await debt_ledger(item, payment, user_id, db, payload.bank_account_id)
+        await sync_payment(item, payment, payload, user_id, db)
     if commit:
         await db.commit()
     return ledger(item, [*payments, payment])

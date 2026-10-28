@@ -36,7 +36,8 @@ async def delete(debt_id: UUID, user: User = Depends(get_current_user), db: Asyn
 
 async def pay(debt_id: UUID, payload: PaymentCreate, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     response.headers["Cache-Control"] = "no-store"
-    return await service.add_payment(debt_id, payload, user.id, db)
+    result = await service.add_payment(debt_id, payload, user.id, db)
+    return result | {"SavingUpdated": payload.saving_id is not None}
 
 
 async def update_installments(debt_id: UUID, payload: InstallmentsUpdate, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

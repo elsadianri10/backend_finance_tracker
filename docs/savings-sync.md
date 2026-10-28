@@ -17,3 +17,16 @@ Ledger tertaut tidak bisa diedit/dihapus manual. Pembatalan pembayaran rutin ter
 Jalankan `.venv/Scripts/python.exe tests/check_savings_sync_migration.py` untuk schema sintetis. `--apply` menerapkan migration setelah membandingkan seluruh record/kolom lama. Migration 018 telah diterapkan lokal 9 Oktober 2026; semua record sebelumnya tetap utuh.
 
 Validasi: `tests/test_savings_sync.py` memeriksa tarik tunai, setoran langsung, pembayaran rutin dua arah, idempotensi, otorisasi, rollback, dan pembatalan. Proxy diuji melalui `npm run test:routines` dengan SQLite sintetis.
+
+
+## Pembayaran utang dan pengembalian piutang (28 Oktober 2026)
+
+`POST /debts/{id}/payments` menerima `SavingId` opsional bersama `BankAccountId` yang cocok dengan rekening Tabungan Uang terpilih (keduanya boleh null untuk tabungan tunai). Utang membuat mutasi REMOVE; pengembalian piutang membuat ADD. Relasi tetap `ledger_transactions.debt_payment_id` dan `saving_movement_id`: hanya satu ledger per pembayaran, tanpa transaksi Tarik Tunai atau Alokasi Tabungan tambahan. Tidak ada perubahan schema/migrasi.
+
+Alur yang sama tersedia lewat `POST /transactions` dengan `DebtId` + `SavingId`. Hubungan Savings belum dapat digabung dengan Bill/Routine pada input Transaksi ini. Pengeluaran utang tetap kategori debt dan pengembalian piutang kategori receivable; pengembalian piutang mengikuti perhitungan arus kas yang sudah ada, bukan pendapatan baru.
+
+Pemilik dikunci sebelum utang dan Savings; pembayaran, ledger, progres rutin terkait dan mutasi Savings disimpan dalam satu commit. Saldo cukup, batas saldo, pemilik, CASH, rekening dan urutan tanggal Savings tetap divalidasi. Kegagalan membatalkan seluruh pencatatan. RequestId berulang dengan nominal/tanggal/catatan/target yang sama mengembalikan hasil sebelumnya, tanpa menggandakan mutasi; perubahan rekening/target ditolak. Mutasi menggunakan ID deterministik dari pembayaran, sehingga ID permintaan yang kebetulan sama di dua utang tidak berbagi satu mutasi.
+
+Form Hutang & Piutang menyediakan checkbox opsional default off; daftar Savings dimuat saat diaktifkan. Tabungan dan rekeningnya dikirim bersama. Form Transaksi menampilkan dropdown Savings saat memilih utang/piutang dan mengikuti rekening tabungan tersebut. Respons pembayaran `SavingUpdated` mengarahkan refresh hanya ke Savings yang terpengaruh. Kegagalan memuat pilihan dapat dicoba lagi atau opsi dimatikan untuk pembayaran biasa.
+
+Pembayaran/penarikan lama tidak ditautkan ulang otomatis. Jangan mencatat ulang pembayaran yang sudah ada hanya untuk memilih Savings; tindakan tersebut akan menjadi pembayaran baru. Pengujian: `tests/test_debt_savings.py`, `test_payment_sync.py`, `test_savings_sync.py`, `test_debts.py` memakai SQLite in-memory sintetis. Tidak ada perubahan database aplikasi saat verifikasi.
