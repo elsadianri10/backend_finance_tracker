@@ -68,3 +68,23 @@ async def reverse_movement(ledger, user_id, db):
         'RequestId': uuid5(ledger.id, 'saving-reversal'),
         'Direction': 'REMOVE' if movement.direction == 'ADD' else 'ADD', 'Amount': movement.amount,
         'MovementDate': savings_service.local_today(), 'Notes': 'Pembatalan · ' + ledger.description}), user_id, db, commit=False)
+
+
+async def fund_expense(ledger, saving_id, user_id, db, repeat=False):
+    """One withdrawal for one expense; never retrofit a previously recorded payment."""
+    from fastapi import HTTPException
+    await db.flush()
+    if ledger.kind != 'expense':
+        if saving_id:
+            invalid('Bayar dari Savings hanya untuk pengeluaran')
+        return
+    if ledger.saving_movement_id:
+        movement = await db.get(SavingMovement, ledger.saving_movement_id)
+        if movement is None or movement.direction != 'REMOVE' or movement.saving_id != saving_id:
+            raise HTTPException(409, 'Pembayaran sudah tercatat dengan Savings berbeda')
+        return
+    if saving_id:
+        if repeat:
+            raise HTTPException(409, 'Pembayaran lama tidak dapat ditautkan ulang ke Savings')
+        await apply_movement(ledger, saving_id, 'REMOVE', uuid5(ledger.id, 'expense-saving'), user_id, db)
+        await db.flush()

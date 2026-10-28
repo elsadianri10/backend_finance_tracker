@@ -138,7 +138,8 @@ async def control(need_id, payload, user, db):
 
 
 def fingerprint(need_id, product_id, payload):
-    return hashlib.sha256((str(need_id) + ':' + str(product_id) + ':' + payload.model_dump_json(exclude={'request_id'})).encode()).hexdigest()
+    excluded = {'request_id'} | ({'saving_id'} if getattr(payload, 'saving_id', None) is None else set())
+    return hashlib.sha256((str(need_id) + ':' + str(product_id) + ':' + payload.model_dump_json(exclude=excluded)).encode()).hexdigest()
 
 
 async def repeated(payload, digest, user, db):
@@ -287,6 +288,8 @@ async def purchase(need_id, product_id, payload, user, db):
             source_label=source, destination_label='', notes=payload.notes)
         db.add(ledger)
         await db.flush()
+        from app.services.savings_sync_service import fund_expense
+        await fund_expense(ledger, payload.saving_id, user.id, db)
     product.reserve_count += payload.quantity
     product.version += 1
     need.version += 1

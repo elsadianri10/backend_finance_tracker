@@ -163,7 +163,7 @@ async def detail(transaction_id, user_id, db):
     return result
 
 
-async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sync=True, bank_id=None, notes=''):
+async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sync=True, bank_id=None, notes='', saving_id=None):
     from app.services.payment_sync_service import lock_owner, billing_ledger
     await lock_owner(user_id, db)
     item = await owned_transaction(transaction_id, user_id, db, lock=True)
@@ -173,8 +173,12 @@ async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sy
         raise HTTPException(409, "Only the next unpaid installment can be paid")
     next_bill.paid_at = datetime.now(timezone.utc)
     await db.flush()
+    if saving_id and not sync:
+        raise HTTPException(422, "Savings harus dicatat bersama Transaksi")
     if sync:
-        await billing_ledger(item, next_bill, user_id, db, bank_id, notes)
+        row = await billing_ledger(item, next_bill, user_id, db, bank_id, notes)
+        from app.services.savings_sync_service import fund_expense
+        await fund_expense(row, saving_id, user_id, db)
     result = await response(item, db)
     if commit:
         await db.commit()

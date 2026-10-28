@@ -23,10 +23,23 @@ Validasi: `tests/test_savings_sync.py` memeriksa tarik tunai, setoran langsung, 
 
 `POST /debts/{id}/payments` menerima `SavingId` opsional bersama `BankAccountId` yang cocok dengan rekening Tabungan Uang terpilih (keduanya boleh null untuk tabungan tunai). Utang membuat mutasi REMOVE; pengembalian piutang membuat ADD. Relasi tetap `ledger_transactions.debt_payment_id` dan `saving_movement_id`: hanya satu ledger per pembayaran, tanpa transaksi Tarik Tunai atau Alokasi Tabungan tambahan. Tidak ada perubahan schema/migrasi.
 
-Alur yang sama tersedia lewat `POST /transactions` dengan `DebtId` + `SavingId`. Hubungan Savings belum dapat digabung dengan Bill/Routine pada input Transaksi ini. Pengeluaran utang tetap kategori debt dan pengembalian piutang kategori receivable; pengembalian piutang mengikuti perhitungan arus kas yang sudah ada, bukan pendapatan baru.
+Alur yang sama tersedia lewat `POST /transactions` dengan `DebtId` + `SavingId`. Savings juga dapat dipakai untuk pengeluaran Bill/Routine seperti penjelasan berikut. Pengeluaran utang tetap kategori debt dan pengembalian piutang kategori receivable; pengembalian piutang mengikuti perhitungan arus kas yang sudah ada, bukan pendapatan baru.
 
 Pemilik dikunci sebelum utang dan Savings; pembayaran, ledger, progres rutin terkait dan mutasi Savings disimpan dalam satu commit. Saldo cukup, batas saldo, pemilik, CASH, rekening dan urutan tanggal Savings tetap divalidasi. Kegagalan membatalkan seluruh pencatatan. RequestId berulang dengan nominal/tanggal/catatan/target yang sama mengembalikan hasil sebelumnya, tanpa menggandakan mutasi; perubahan rekening/target ditolak. Mutasi menggunakan ID deterministik dari pembayaran, sehingga ID permintaan yang kebetulan sama di dua utang tidak berbagi satu mutasi.
 
 Form Hutang & Piutang menyediakan checkbox opsional default off; daftar Savings dimuat saat diaktifkan. Tabungan dan rekeningnya dikirim bersama. Form Transaksi menampilkan dropdown Savings saat memilih utang/piutang dan mengikuti rekening tabungan tersebut. Respons pembayaran `SavingUpdated` mengarahkan refresh hanya ke Savings yang terpengaruh. Kegagalan memuat pilihan dapat dicoba lagi atau opsi dimatikan untuk pembayaran biasa.
 
 Pembayaran/penarikan lama tidak ditautkan ulang otomatis. Jangan mencatat ulang pembayaran yang sudah ada hanya untuk memilih Savings; tindakan tersebut akan menjadi pembayaran baru. Pengujian: `tests/test_debt_savings.py`, `test_payment_sync.py`, `test_savings_sync.py`, `test_debts.py` memakai SQLite in-memory sintetis. Tidak ada perubahan database aplikasi saat verifikasi.
+
+
+## Sumber Savings untuk pengeluaran rutin, Tagihan, dan stok
+
+SavingId opsional pada `POST /routine/{id}/payments`, `POST /billing/transactions/{id}/installments/{id}/pay`, dan `POST /stock-needs/{id}/products/{id}/purchases` mengurangi Tabungan Uang terpilih. Rekening sumber wajib cocok dengan rekening tabungan; tabungan tunai tanpa rekening memakai source null. Pembelian stok wajib RecordExpense=true dan Amount>0. Pembayaran rutin jenis TRANSFER tidak menerima sumber Savings ini; tujuan Savings alokasi tabungan yang sudah ada tetap terpisah.
+
+Endpoint Tagihan tetap menerima request tanpa body atau `{}`. Tagihan yang sudah dibayar ditolak 409, sehingga pengiriman ulang tidak menimbulkan pengeluaran atau mutasi baru. Rutin memakai RequestId/sequence dan stok memakai RequestId/fingerprint. Target berbeda pada retry ditolak. Pembayaran lama tidak ditautkan ulang; lampiran rutin ke Tagihan lama tidak membuat withdrawal baru. Relasi existing ledger ke saving_movements cukup, tidak ada migration baru.
+
+Semua pencatatan berada di transaksi DB yang sama dan dikunci berdasarkan pemilik. Saldo tidak cukup/jenis bukan CASH/target pemilik lain/rekening atau tanggal tidak cocok menggagalkan seluruh pembayaran serta progres stok. Pembatalan rutin biasa mengembalikan saldo melalui mutasi kebalikan; pembayaran rutin terkait utang/Tagihan tetap tidak dapat dibatalkan lewat Rutin.
+
+Form menampilkan pilihan Bayar dari Savings default off. Daftar dimuat saat dibutuhkan; sumber rekening mengikuti tabungan dan tombol simpan menunggu pilihan valid. Stok menyembunyikan serta membersihkan pilihan ketika RecordExpense dimatikan. Transaksi juga menerima SavingId bersama BillingInstallmentId/RoutinePlanId untuk pengeluaran. Respons SavingUpdated dan SavingMovementId mengarahkan refresh Savings, ledger dan ringkasan; tidak menambah Pendapatan atau Tarik Tunai fiktif.
+
+Verifikasi sintetis: tests/test_savings_expenses.py mencakup sukses/gagal, rollback, retry, undo, rutin terhubung utang/Tagihan, dan kedua titik masuk Transaksi. npm run test:routines memeriksa ketiga alur melalui proxy frontend dengan API SQLite in-memory. Data aplikasi tidak diubah.

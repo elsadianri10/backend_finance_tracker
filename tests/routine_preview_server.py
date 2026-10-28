@@ -33,7 +33,7 @@ def fk(connection,record):connection.execute('PRAGMA foreign_keys=ON')
 sessions=async_sessionmaker(engine,expire_on_commit=False)
 owner=uuid4()
 now=datetime.now(timezone.utc)
-token=jwt.encode({'sub':str(owner),'iat':now,'exp':now+timedelta(hours=2),'type':'access','iss':settings.TOKEN_ISSUER,'aud':settings.TOKEN_AUDIENCE},settings.SECRET_KEY,algorithm='HS256')
+token=jwt.encode({'sub':str(owner),'iat':now,'exp':now+timedelta(hours=2),'type':'access','auth_method':'passkey','iss':settings.TOKEN_ISSUER,'aud':settings.TOKEN_AUDIENCE},settings.SECRET_KEY,algorithm='HS256')
 
 async def preview_db():
     async with sessions() as db:yield db

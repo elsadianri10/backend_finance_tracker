@@ -11,6 +11,8 @@ from app.schemas.billing_transaction_schema import (
     TransactionResponse,
     TransactionCreate,
     LastAmountUpdate,
+    BillingPaymentInput,
+    BillingPaymentResponse,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.db_config import get_db
@@ -123,11 +125,12 @@ async def detail(
     return await transactions.detail(transaction_id=transaction_id, response=response, user=user, db=db)
 
 
-@router.post('/transactions/{transaction_id}/installments/{installment_id}/pay', response_model=TransactionResponse)
+@router.post('/transactions/{transaction_id}/installments/{installment_id}/pay', response_model=BillingPaymentResponse)
 async def mark_paid(
     transaction_id: UUID,
     installment_id: UUID,
     response: Response,
+    payload: BillingPaymentInput | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -135,6 +138,7 @@ async def mark_paid(
         transaction_id=transaction_id,
         installment_id=installment_id,
         response=response,
+        payload=payload,
         user=user,
         db=db,
     )
