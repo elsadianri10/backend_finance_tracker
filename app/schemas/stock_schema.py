@@ -106,12 +106,13 @@ class PurchaseInput(PascalModel):
     store: str = Field(default='', max_length=150)
     notes: str = Field(default='', max_length=2000)
     record_expense: bool = False
+    saving_id: UUID | None = None
     source_bank_id: UUID | None = None
 
     @model_validator(mode='after')
     def expense(self):
         if self.record_expense and not self.amount:
             raise ValueError('Nominal pengeluaran harus lebih dari nol')
-        if self.source_bank_id and not self.record_expense:
+        if (self.source_bank_id or self.saving_id) and not self.record_expense:
             raise ValueError('Rekening hanya untuk pencatatan pengeluaran')
         return self

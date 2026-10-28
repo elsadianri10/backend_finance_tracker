@@ -68,6 +68,7 @@ class PaymentInput(PascalModel):
     amount: int = Field(strict=True, gt=0, le=1000000000000)
     payment_date: date = Field(ge=date(2000,1,1), le=date(2099,12,31))
     source_bank_id: UUID | None = None
+    saving_id: UUID | None = None
     billing_installment_id: UUID | None = None
     notes: str = Field(default='', max_length=2000)
 
@@ -99,8 +100,6 @@ class TransactionInput(PascalModel):
     def transfer_banks(self):
         if sum(bool(value) for value in (self.debt_id, self.billing_installment_id, self.routine_plan_id)) > 1:
             raise ValueError('Pilih satu penghubung pembayaran')
-        if self.saving_id and (self.billing_installment_id or self.routine_plan_id):
-            raise ValueError('Savings dapat digabung hanya dengan Hutang/Piutang')
         if any((self.debt_id, self.billing_installment_id, self.routine_plan_id, self.saving_id)) and not self.request_id:
             raise ValueError('RequestId wajib untuk pencatatan tertaut')
         if self.routine_plan_id and not self.routine_sequence:

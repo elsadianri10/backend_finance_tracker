@@ -74,3 +74,12 @@ class TransactionResponse(PascalModel):
     amount: int
     notes: str
     installments: list[InstallmentResponse]
+
+
+class BillingPaymentInput(PascalModel):
+    source_bank_id: UUID | None = None
+    saving_id: UUID | None = None
+
+
+class BillingPaymentResponse(TransactionResponse):
+    saving_updated: bool = False

@@ -13,6 +13,8 @@
 
 ### 2026-10-28
 
+- Sumber Savings untuk pembayaran rutin, Tagihan, dan pembelian stok dengan pencatatan pengeluaran. PaymentInput/PurchaseInput menerima SavingId opsional; endpoint bayar Tagihan menerima body opsional SourceBankId/SavingId. Satu transaksi database mencatat ledger, progres pembayaran/stok dan mutasi REMOVE. Validasi pemilik/CASH/rekening/saldo/tanggal dan retry mencegah catatan ganda atau perubahan parsial. Pembayaran rutin yang terhubung ke utang/Tagihan tetap satu ledger. Undo rutin biasa membuat mutasi pengembalian; alokasi tabungan tetap memakai sumber rekening, bukan withdrawal Savings. Fingerprint stok tanpa SavingId mempertahankan kompatibilitas retry lama. Tidak perlu migrasi schema baru.
+
 - Pembayaran utang dan pengembalian piutang dapat ditautkan ke Savings Tabungan Uang melalui SavingId opsional, dari menu Hutang & Piutang maupun Transaksi. Satu commit mencatat pembayaran, satu ledger, dan satu mutasi Savings (REMOVE/ADD), memakai relasi yang sudah ada tanpa migrasi baru. Validasi pemilik, jenis simpanan, rekening, saldo dan tanggal berlaku; kegagalan membatalkan seluruh perubahan. Pengiriman ulang tidak menggandakan catatan dan menolak perubahan target pada RequestId yang sama. Pembayaran lama tidak otomatis ditautkan ulang. Respons pembayaran menyertakan SavingUpdated agar frontend memuat ulang Savings hanya jika terpengaruh.
 
 ### 2026-10-27

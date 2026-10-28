@@ -237,15 +237,20 @@ async def save_plan(payload, user_id, month, db, item_id=None):
 
 
 async def pay(plan_id, payload, user_id, month, db, commit=True):
+    from app.services.savings_sync_service import fund_expense
     from app.services.payment_sync_service import lock_owner, billing_ledger, debt_ledger
     await lock_owner(user_id, db)
     plan = await owned(RoutinePlan, plan_id, user_id, db, True)
+    if plan.kind == "TRANSFER" and payload.saving_id:
+        invalid("Bayar dari Savings hanya untuk pengeluaran; alokasi tabungan memakai rekening sumber")
     repeat = await db.scalar(select(RoutinePayment).where(RoutinePayment.plan_id == plan_id, RoutinePayment.request_id == payload.request_id))
     if repeat:
         ledger = await db.scalar(select(LedgerTransaction).where(LedgerTransaction.routine_payment_id == repeat.id))
         if repeat.voided_at or (repeat.sequence, ledger.amount, ledger.source_bank_id, ledger.billing_installment_id, ledger.notes) != (payload.sequence, payload.amount, payload.source_bank_id, payload.billing_installment_id, payload.notes) or (not plan.billing_transaction_id and ledger.transaction_date != payload.payment_date):
             raise HTTPException(409, 'Permintaan pembayaran telah digunakan')
-        return await plan_response(plan, month, db)
+        if plan.kind != "TRANSFER":
+            await fund_expense(ledger, payload.saving_id, user_id, db, repeat=True)
+        return (await plan_response(plan, month, db)) | {"SavingUpdated": bool(payload.saving_id)}
     paid = await active_payments(plan_id, db)
     sequence = plan.initial_paid + len(paid) + 1
     if plan.status != 'ACTIVE' or (plan.total_cycles and sequence > plan.total_cycles) or payload.sequence != sequence:
@@ -261,13 +266,16 @@ async def pay(plan_id, payload, user_id, month, db, commit=True):
         if bill is None or int(bill.amount) != payload.amount or bill.amount != int(bill.amount):
             invalid('Pilih Tagihan dengan nominal pembayaran yang sama')
         existing = await db.scalar(select(LedgerTransaction).where(LedgerTransaction.billing_installment_id == bill.id, LedgerTransaction.voided_at.is_(None)))
+        if existing and existing.source_bank_id != payload.source_bank_id:
+            raise HTTPException(409, "Rekening pembayaran yang sudah tercatat berbeda")
         if existing and existing.routine_payment_id:
             raise HTTPException(409, 'Pembayaran sudah terhubung ke rencana rutin')
         if bill.paid_at is None:
             await billing.mark_paid(item.id, bill.id, user_id, db, commit=False, sync=False)
         ledger = await billing_ledger(item, bill, user_id, db, payload.source_bank_id, payload.notes, plan, payload.request_id)
+        await fund_expense(ledger, payload.saving_id, user_id, db, repeat=existing is not None)
         await db.flush()
-        result = await plan_response(plan, month, db)
+        result = (await plan_response(plan, month, db)) | {"SavingUpdated": bool(payload.saving_id)}
         if commit:
             await db.commit()
         return result
@@ -281,8 +289,10 @@ async def pay(plan_id, payload, user_id, month, db, commit=True):
             'BankAccountId': payload.source_bank_id, 'Notes': payload.notes}), user_id, db, commit=False, sync=False)
         item = await owned(Debt, plan.debt_id, user_id, db)
         payment = await db.scalar(select(DebtPayment).where(DebtPayment.debt_id == item.id, DebtPayment.request_id == payload.request_id))
-        await debt_ledger(item, payment, user_id, db, payload.source_bank_id, plan, payload.request_id)
-        result = await plan_response(plan, month, db)
+        existing = await db.scalar(select(LedgerTransaction).where(LedgerTransaction.debt_payment_id == payment.id))
+        ledger = await debt_ledger(item, payment, user_id, db, payload.source_bank_id, plan, payload.request_id)
+        await fund_expense(ledger, payload.saving_id, user_id, db, repeat=existing is not None)
+        result = (await plan_response(plan, month, db)) | {"SavingUpdated": bool(payload.saving_id)}
         if commit:
             await db.commit()
         return result
@@ -300,9 +310,11 @@ async def pay(plan_id, payload, user_id, month, db, commit=True):
     if plan.saving_id:
         from app.services.savings_sync_service import apply_movement
         await apply_movement(ledger, plan.saving_id, 'ADD', payload.request_id, user_id, db)
+    if plan.kind != "TRANSFER":
+        await fund_expense(ledger, payload.saving_id, user_id, db)
     plan.version += 1
     await db.flush()
-    result = await plan_response(plan, month, db)
+    result = (await plan_response(plan, month, db)) | {"SavingUpdated": bool(payload.saving_id)}
     if commit:
         await db.commit()
     return result
@@ -325,7 +337,7 @@ async def undo(plan_id, payment_id, user_id, month, db):
     payment.voided_at = ledger.voided_at = datetime.now(timezone.utc)
     plan.version += 1
     await db.flush()
-    result = await plan_response(plan, month, db)
+    result = (await plan_response(plan, month, db)) | {"SavingUpdated": bool(ledger.saving_movement_id)}
     await db.commit()
     return result
 
@@ -353,8 +365,8 @@ async def linked_transaction(payload, user_id, db):
         item = await billing.owned_transaction(bill.transaction_id, user_id, db, lock=True)
         if payload.kind != 'expense' or payload.amount != bill.amount:
             invalid('Pembayaran Tagihan harus Pengeluaran dengan nominal tepat')
-        await billing.mark_paid(item.id, bill.id, user_id, db, commit=False, sync=False)
-        return await billing_ledger(item, bill, user_id, db, payload.source_bank_id, payload.notes)
+        await billing.mark_paid(item.id, bill.id, user_id, db, commit=False, bank_id=payload.source_bank_id, notes=payload.notes, saving_id=payload.saving_id)
+        return await db.scalar(select(LedgerTransaction).where(LedgerTransaction.billing_installment_id == bill.id, LedgerTransaction.voided_at.is_(None)))
     plan = await owned(RoutinePlan, payload.routine_plan_id, user_id, db, True)
     expected = 'transfer' if plan.kind == 'TRANSFER' else 'expense'
     if payload.kind != expected or (expected == 'transfer' and payload.destination_bank_id != plan.destination_bank_id):
@@ -370,7 +382,7 @@ async def linked_transaction(payload, user_id, db):
     await pay(plan.id, PaymentInput.model_validate({
         'RequestId': payload.request_id, 'Sequence': payload.routine_sequence, 'Amount': payload.amount,
         'PaymentDate': payload.transaction_date, 'SourceBankId': payload.source_bank_id,
-        'BillingInstallmentId': installment_id, 'Notes': payload.notes}), user_id, payload.transaction_date.strftime('%Y-%m'), db, commit=False)
+        'BillingInstallmentId': installment_id, 'Notes': payload.notes, 'SavingId': payload.saving_id}), user_id, payload.transaction_date.strftime('%Y-%m'), db, commit=False)
     payment = await db.scalar(select(RoutinePayment).where(RoutinePayment.plan_id == plan.id, RoutinePayment.request_id == payload.request_id))
     return await db.scalar(select(LedgerTransaction).where(LedgerTransaction.routine_payment_id == payment.id))
 
