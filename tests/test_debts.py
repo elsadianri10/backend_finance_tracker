@@ -9,6 +9,7 @@ from app.models import Debt, DebtPayment, User
 
 
 class DebtTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     asyncSetUp = fixture.BillingTests.asyncSetUp
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers

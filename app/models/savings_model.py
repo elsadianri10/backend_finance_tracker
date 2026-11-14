@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base_model import Base
 
@@ -32,6 +32,7 @@ class Saving(Base):
     maturity_date: Mapped[date | None] = mapped_column(Date)
     interest_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     notes: Mapped[str] = mapped_column(String(2000), nullable=False, default='')
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

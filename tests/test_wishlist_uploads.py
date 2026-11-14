@@ -20,7 +20,14 @@ def image_bytes():
 
 
 class WishlistUploadTests(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp = fixture.BillingTests.asyncSetUp
+    async def asyncSetUp(self):
+        await fixture.BillingTests.asyncSetUp(self)
+        from datetime import datetime, timedelta, timezone
+        from app.models.access_model import AccountAccess
+        async with self.sessions() as db:
+            at = datetime.now(timezone.utc)
+            db.add(AccountAccess(user_id=self.user_id,version=1,trial_started_at=at,trial_until=at+timedelta(days=30)))
+            await db.commit()
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers
     create = wishlist_fixture.WishlistTests.create

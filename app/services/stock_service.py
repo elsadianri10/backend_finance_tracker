@@ -80,6 +80,10 @@ def version(row, expected):
 
 async def save_need(need_id, payload, user, db):
     if need_id:
+        await owned(need_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
+    if need_id:
         need = await owned(need_id, user, db)
         version(need, payload.version)
         need.version += 1
@@ -107,6 +111,9 @@ async def remove(need_id, payload, user, db):
 
 async def control(need_id, payload, user, db):
     need = await owned(need_id, user, db)
+    from app.services.access_service import require_pro
+    if payload.action != "archive":
+        await require_pro(user.id, db)
     version(need, payload.version)
     if payload.action == 'pause':
         need.paused = True
@@ -174,6 +181,8 @@ async def remove_product(need_id, product_id, payload, user, db):
 
 async def product_replenishment(need_id, product_id, payload, user, db):
     need = await owned(need_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     product = await product_for(need, product_id, db)
     version(product, payload.version)
     if need.archived or product.archived:
@@ -201,6 +210,8 @@ def event_row(need, product, payload, digest, kind, active_delta, reserve_delta,
 
 async def save_product(need_id, product_id, payload, user, db):
     need = await owned(need_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     digest = fingerprint(need_id, product_id, payload)
     if await repeated(payload, digest, user, db):
         return await one(need, db)
@@ -228,6 +239,8 @@ async def save_product(need_id, product_id, payload, user, db):
 
 async def use_product(need_id, product_id, payload, user, db):
     need = await owned(need_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     digest = fingerprint(need_id, product_id, payload)
     if await repeated(payload, digest, user, db):
         return await one(need, db)
@@ -269,6 +282,8 @@ async def use_product(need_id, product_id, payload, user, db):
 
 async def purchase(need_id, product_id, payload, user, db):
     need = await owned(need_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     digest = fingerprint(need_id, product_id, payload)
     if await repeated(payload, digest, user, db):
         return await one(need, db)

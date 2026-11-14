@@ -1,13 +1,13 @@
 from datetime import datetime
 from uuid import UUID, uuid4
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, String, Uuid, func, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, SmallInteger, String, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base_model import Base
 
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint('auth_version >= 0', name='ck_user_auth_version'),)
+    __table_args__ = (CheckConstraint('auth_version >= 0', name='ck_user_auth_version'), CheckConstraint('admin_f IN (0,1)', name='ck_user_admin_f'))
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     google_sub: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -18,4 +18,5 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_login_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    admin_f: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default='0')
     auth_version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default='0')

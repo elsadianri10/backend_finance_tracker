@@ -4,6 +4,14 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from . import admin_auth_service
+    from . import admin_role_service
+    from . import deletion_service
+    from . import plan_service
+    from . import subscription_service
+    from . import midtrans_service
+
+    from . import access_service
     from . import stock_service
     from . import wishlist_image_service
     from . import wishlist_service
@@ -25,6 +33,14 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "admin_auth_service",
+    "admin_role_service",
+    "deletion_service",
+    "plan_service",
+    "subscription_service",
+    "midtrans_service",
+
+    "access_service",
     "stock_service",
     "wishlist_image_service",
     "wishlist_service",

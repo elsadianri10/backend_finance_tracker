@@ -11,6 +11,45 @@
 
 ## [v.1.0.0-Unrelease]
 
+### 2026-11-14
+
+- Koreksi ruang lingkup portal: /admin memiliki login dan sesi sendiri, tanpa tautan menu/tombol dari Finance Tracker. Cookie dan tujuan JWT admin/personal dipisahkan; backend memeriksa cakupan token pada setiap endpoint. Logout admin tidak mengeluarkan sesi personal dan sebaliknya. Google/passkey tetap dipakai, tidak memerlukan migrasi tambahan selain 031.
+
+- Dashboard /admin terpisah dengan login Google/passkey kembali ke dashboard. Pengelolaan pengguna/Pro dan permintaan penghapusan dipindah dari Profil Saya. users.admin_f 0/1 menentukan hak admin, pemilik awal elsadianri10@gmail.com, penunjukan/pencabutan admin disertai audit dan proteksi pemilik/admin terakhir. Form serta API pengajuan hapus akun diblokir untuk admin. Migration 031 diperlukan; data keuangan dan paket Pro tetap dipertahankan.
+
+### 2026-11-04
+
+- Perbaikan hapus grup Split Bill pada PostgreSQL/Neon: rincian pembagian, item, pengeluaran, dan peserta dihapus sesuai urutan foreign key sebelum grup induk. Seluruh operasi memakai satu transaksi dan pemeriksaan pemilik. Tidak memerlukan migrasi database.
+
+### 2026-11-03
+
+- Persiapan pengguna umum: permintaan hapus akun di Profil Saya dan antrean tinjauan/pemrosesan admin dengan pemeriksaan pesanan, autodebit, retensi pembayaran serta retry pembersihan Blob. Pengingat stok/jatuh tempo di Ringkasan, referensi error dengan log teredaksi, modal responsif HP, backup PostgreSQL terenkripsi dan manifest penghapusan untuk restore terisolasi. Migration 030 diterapkan lokal dengan seluruh record lama identik; tidak ada akun nyata dihapus atau deploy produksi. Kebijakan publik tetap draft sampai identitas/kontak/retensi diputuskan.
+
+- Koreksi pembagian paket: Tagihan dan Hutang/Piutang beserta sinkronisasi pembayarannya menjadi Pro. Gerbang service mencakup jalur pembayaran lintas Transaksi/Rutin; menu Gratis membuka pilihan paket, badge hanya setelah trial habis. PRO_REQUIRED tidak menghapus sesi. Transaksi termasuk PDF/Excel tetap Gratis, data lama dipertahankan. Tidak ada migrasi.
+
+- Finalisasi paket: Gratis 3 rekening dan 3 simpanan aktif; penghitung pemakaian, arsip/pemulihan tanpa menghapus saldo/riwayat, serta tabel Gratis/Pro dari aturan server. Tagihan/Hutang mengikuti koreksi paket Pro di atas. Riwayat pembayaran langganan berpaginasi dilengkapi periode akses/refund. Halaman harga/bantuan dan draft kebijakan disiapkan; kebijakan produksi menunggu identitas/kontak serta persetujuan. Migration 029 dan restore backup diuji dengan schema sintetis; lokal dimigrasikan dengan data lama tetap identik, Neon belum diubah.
+
+- Checkout menerima ExpectedAmount opsional untuk memverifikasi nominal yang sudah ditinjau pengguna. Jika harga berubah, permintaan ditolak sebelum membuat order eksternal. Tidak ada migrasi atau pembayaran produksi.
+
+### 2026-11-02
+
+- Revisi paket: seluruh Transaksi termasuk PDF/Excel tetap Gratis; Wishlist dan Stok Kebutuhan menjadi Pro dengan pemeriksaan server untuk pembuatan/pengelolaan. Data lama tidak dihapus; API baca, penghapusan/privasi, arsip kebutuhan, serta tautan dan reservasi Wishlist publik tetap dipertahankan. Tidak memerlukan migrasi.
+
+- Pemeriksaan Pro pada server untuk ekspor PDF Transaksi/Split Bill, penambahan di atas 3 rencana rutin aktif dan 2 grup Split Bill aktif. Trial, Pro berbayar dan Pro gratis admin memperoleh akses Pro; Gratis tetap bisa ekspor Excel dan mengelola data lama, termasuk data yang sudah melebihi batas. Aktivasi kembali yang menambah slot ikut dibatasi. Tidak ada migrasi atau perubahan record lama; PRO_REQUIRED tidak diperlakukan sebagai sesi kedaluwarsa oleh frontend.
+
+
+- Harga Pro Tahunan diperbarui menjadi Rp249.000; Pro Bulanan tetap Rp29.000. Penghematan tahunan Rp99.000 (sekitar 28%) dibanding 12 pembayaran bulanan. Harga berlaku untuk checkout baru; nominal pesanan/jadwal yang sudah dibuat tetap mengikuti snapshot masing-masing.
+
+- Integrasi langganan Midtrans Snap dan Subscription API: harga server Rp29.000/bulan atau Rp250.000/tahun, checkout terautentikasi, consent autodebit GoPay/kartu kredit, verifikasi provider, perpanjangan kalender, sisa trial dipertahankan, pembatalan penagihan tanpa menghapus masa Pro berbayar, refund/chargeback, idempotensi serta rekonsiliasi webhook terlewat. Migration 028 hanya menambah subscription_orders/subscription_payments. Default pembayaran nonaktif; Sandbox langsung dan produksi masih memerlukan akun/kunci serta aktivasi kanal merchant. Petunjuk: docs/subscriptions.md.
+
+- Migration 027 diterapkan pada database lokal setelah uji upgrade/repeat/baseline sintetis lolos, dengan backup dan perbandingan semua record: data keuangan, pengguna, Pro gratis, langganan dan audit lama tetap utuh.
+
+- Trial Pro gratis 30 hari sekali per akun: migration 027 memberi trial akun lama sejak aktivasi; akun baru sejak login Google terverifikasi pertama. Tanggal dan sisa hari disediakan ke frontend. Login ulang, pengulangan migration dan perubahan Pro gratis tidak mengulang trial; Pro gratis/langganan aktif mengungguli trial dan tetap dipertahankan. Setelah expiry, status kembali ke sumber akses lain/Gratis. Tidak menambah penagihan otomatis atau pembatasan fitur baru. Uji auth/akses/trial dan migrasi/baseline pada schema sintetis lolos.
+
+- Petunjuk aktivasi admin diperjelas: email Google admin di ACCESS_ADMIN_EMAILS backend; pengelolaan pengguna tersedia melalui Profil Saya. Penerima harus sudah terdaftar; akun Pro gratis tetap tidak mendapat wewenang admin.
+
+- Dasar Paket & Akses: tabel relasional account_access/access_audit, status Gratis/Pro berlangganan/Pro gratis, pemberian atau pencabutan gratis oleh admin dengan tanggal opsional dan catatan riwayat. Admin ditentukan environment ACCESS_ADMIN_EMAILS dan terpisah dari Pro. Otorisasi server, pagination, optimistic version dan commit status/audit atomik; paid subscription tetap dipertahankan saat gift dicabut. Migration additive 026; belum mengaktifkan checkout atau pembatasan fitur.
+
 ### 2026-10-28
 
 - Sumber Savings untuk pembayaran rutin, Tagihan, dan pembelian stok dengan pencatatan pengeluaran. PaymentInput/PurchaseInput menerima SavingId opsional; endpoint bayar Tagihan menerima body opsional SourceBankId/SavingId. Satu transaksi database mencatat ledger, progres pembayaran/stok dan mutasi REMOVE. Validasi pemilik/CASH/rekening/saldo/tanggal dan retry mencegah catatan ganda atau perubahan parsial. Pembayaran rutin yang terhubung ke utang/Tagihan tetap satu ledger. Undo rutin biasa membuat mutasi pengembalian; alokasi tabungan tetap memakai sumber rekening, bukan withdrawal Savings. Fingerprint stok tanpa SavingId mempertahankan kompatibilitas retry lama. Tidak perlu migrasi schema baru.

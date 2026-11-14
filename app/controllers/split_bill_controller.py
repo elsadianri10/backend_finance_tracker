@@ -26,7 +26,7 @@ async def detail(group_id: UUID, response: Response, user: User = Depends(get_cu
 
 
 async def export(group_id: UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    group = await service.response(await service.owned(group_id, user.id, db), db)
+    group = await service.report(group_id, user.id, db)
     content = await run_in_threadpool(export_pdf, group)
     return Response(content, media_type='application/pdf', headers={'Cache-Control': 'no-store', 'Content-Disposition': f'attachment; filename="split-bill-{group_id}.pdf"'})
 

@@ -49,6 +49,7 @@ class MovementResponse(PascalModel):
 
 
 class SavingResponse(PascalModel):
+    archived: bool = False
     id: UUID
     kind: str
     metal_type: str | None

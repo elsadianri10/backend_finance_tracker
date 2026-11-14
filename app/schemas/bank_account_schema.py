@@ -23,6 +23,7 @@ class BankAccountUpdate(BankAccountCreate):
 
 
 class BankAccountResponse(PascalModel):
+    archived: bool = False
     id: UUID
     platform_id: int
     platform_name: str

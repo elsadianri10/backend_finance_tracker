@@ -11,6 +11,7 @@ import test_debt_savings as fixture
 
 
 class SavingsExpenseTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     async def asyncSetUp(self):
         await fixture.DebtSavingsTests.asyncSetUp(self)
         class FixedDateTime(datetime):

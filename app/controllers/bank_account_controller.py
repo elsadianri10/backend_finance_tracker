@@ -36,3 +36,8 @@ async def update(account_id: UUID, payload: BankAccountUpdate, response: Respons
 async def delete(account_id: UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await service.delete(account_id, user.id, db)
     return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
+async def archive(item_id, archived, response, user, db):
+    response.headers['Cache-Control'] = 'no-store'
+    return await service.archive(item_id, archived, user.id, db)

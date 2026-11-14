@@ -7,6 +7,7 @@ import test_billing as fixture
 
 
 class DebtSavingsTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     async def asyncSetUp(self):
         await fixture.BillingTests.asyncSetUp(self)
         self.clock = patch('app.services.savings_service.local_today', return_value=date(2026, 10, 9))

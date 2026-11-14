@@ -1,3 +1,4 @@
+from app.services.access_service import require_pro
 """One ledger entry per real payment, shared by all entry points.
 
 Payment mutations serialize on the owner before locking parent records.
@@ -58,6 +59,7 @@ async def attach_routine(row, user_id, db, plan=None, request_id=None, billing_t
 
 
 async def billing_ledger(item, bill, user_id, db, bank_id=None, notes='', plan=None, request_id=None):
+    await require_pro(user_id, db)
     from app.services.routine_service import bank_label, invalid
     if int(bill.amount) != bill.amount or int(bill.amount) <= 0:
         invalid('Nominal Tagihan harus rupiah bulat lebih dari 0')
@@ -76,6 +78,7 @@ async def billing_ledger(item, bill, user_id, db, bank_id=None, notes='', plan=N
 
 
 async def debt_ledger(item, payment, user_id, db, bank_id=None, plan=None, request_id=None):
+    await require_pro(user_id, db)
     from app.services.routine_service import bank_label
     row = await db.scalar(select(LedgerTransaction).where(LedgerTransaction.debt_payment_id == payment.id))
     if row is None:

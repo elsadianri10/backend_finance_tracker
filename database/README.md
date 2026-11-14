@@ -1,6 +1,6 @@
 # Script database PostgreSQL
 
-- `000_init.sql`: baseline lengkap sampai versi 021 untuk database kosong, sekaligus mengosongkan data aplikasi secara default dengan TRUNCATE; isi wallet_providers tetap dipertahankan. Mencakup seluruh tabel keuangan, Pengeluaran Rutin, ledger Transaksi, semua constraint/index, dan 7 platform default (termasuk Blibli Pay Later).
+- `000_init.sql`: baseline lengkap sampai versi 029 untuk database kosong, sekaligus mengosongkan data aplikasi secara default dengan TRUNCATE; isi wallet_providers tetap dipertahankan. Mencakup seluruh tabel keuangan, Pengeluaran Rutin, ledger Transaksi, semua constraint/index, dan 7 platform default (termasuk Blibli Pay Later).
 - `001_create_billing_accounts.sql`: platform bank/paylater, relasi tipe yang didukung, akun milik pengguna, dan seed BCA, BRI, GoPay Later, ShopeePay Later.
 - `002_create_billing_transactions.sql`: transaksi per akun dan jadwal cicilan, nominal NUMERIC, serta waktu pembayaran. Telah dijalankan pada database lokal 7 Oktober 2026. Database lain perlu menjalankan script ini sekali.
 - `003_merge_billing_platform_types.sql`: memindahkan tipe ke kolom nullable `billing_platforms.platform_type`, mempertahankan batasan tipe lama, mengganti foreign key akun, dan menghapus tabel relasi lama. Telah dijalankan pada database lokal 7 Oktober 2026. NULL mengizinkan kedua tipe akun.
@@ -22,8 +22,8 @@
 - `021_passkeys.sql`: menambah `users.auth_version` dan tiga tabel relasional passkey/challenge/kode pemulihan. Tidak mengubah data keuangan atau mengaktifkan passkey akun secara otomatis. Uji: `tests/check_passkey_migration.py`; `--apply` membuat backup dan membandingkan seluruh record sebelum commit. Diterapkan pada database proyek 12 Oktober 2026 tanpa reset. Konfigurasi domain/deployment: [Passkey](../docs/passkeys.md).
 - `025_stock_product_replenishment.sql`: dua kolom override jeda/penundaan beli ulang per produk, default lama tetap aktif. Jalankan setelah 024. Uji data terisi/upgrade berulang/baseline hanya di schema sintetis: `tests/check_stock_migration.py`.
 - `024_stock_needs.sql`: tiga tabel stok kebutuhan/produk/riwayat bertipe. Additive, tanpa perubahan data keuangan/Wishlist; jalankan setelah 023. Uji upgrade berulang, data terisi, pembelian bersamaan dan baseline/reset hanya dalam schema sintetis: `tests/check_stock_migration.py`.
-- Perubahan berikutnya memakai `026_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
-- Database baru: jalankan 000 saja; 001–025 sudah tergabung dan tidak perlu dijalankan lagi. Database lama: gunakan hanya migration yang belum diterapkan, berurutan dan sekali per database. Catat versi yang sudah diterapkan. Tidak ada auto-migration saat aplikasi mulai.
+- Perubahan berikutnya memakai `032_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
+- Database baru: jalankan 000 saja; 001–029 sudah tergabung dan tidak perlu dijalankan lagi. Database lama: gunakan hanya migration yang belum diterapkan, berurutan dan sekali per database. Catat versi yang sudah diterapkan. Tidak ada auto-migration saat aplikasi mulai.
 - 000 adalah snapshot baseline terkini; perubahan 000 tidak dipakai untuk upgrade database yang sudah berjalan. Jangan ubah migration historis 001 dan seterusnya. Tambahkan file baru dengan `ALTER TABLE` atau `CREATE TABLE` dan transaksi `BEGIN` / `COMMIT`.
 - Buat database terlebih dahulu; script tidak membuat database atau user PostgreSQL.
 
@@ -74,3 +74,22 @@ Migration 009 menambahkan sumber rekening pada Piutang dan rencana cicilan 1–6
 ## Wishlist versi 022
 
 Database yang sudah pada 021: jalankan hanya `022_wishlists.sql` untuk menambah lima tabel Wishlist relasional tanpa mengubah data lama. Detail fitur dan verifikasi ada di `docs/wishlists.md`. Tidak ada auto-migration saat startup.
+
+- `026_account_access.sql`: tabel account_access/access_audit untuk status paket dan Pro gratis admin. Additive, tidak mengubah data keuangan. Akun tanpa record akses berstatus Gratis. Uji hanya schema sintetis: `tests/check_access_migration.py`. Konfigurasi: `docs/account-access.md`.
+
+- `027_account_trial.sql`: trial Pro 30 hari (720 jam) sekali per akun. Akun lama dimulai saat migrasi; akun baru dimulai pada login Google terverifikasi pertama. Pemberian Pro gratis/langganan dan data keuangan dipertahankan. Uji schema sintetis: `tests/check_trial_migration.py`. Jalankan setelah 026 dan sebelum deploy backend trial.
+
+Migration 028_subscriptions.sql menambah subscription_orders dan subscription_payments (tanpa JSON), tidak mengubah data keuangan. Jalankan setelah 027 sebelum deploy langganan. Checkout/autodebit default nonaktif sampai environment Midtrans dikonfigurasi.
+
+- `029_plan_archives.sql`: kolom archived pada rekening/Savings, default false untuk seluruh data lama. Tidak mengubah saldo, mutasi, link keuangan atau hak akses. Arsip/pemulihan memakai pemeriksaan kepemilikan dan slot aktif.
+
+- 030_account_deletions.sql: antrean permintaan/pemeriksaan penghapusan dan pembersihan Blob; tidak mengubah record keuangan lama.
+
+- `031_user_admin_roles.sql`: users.admin_f 0/1 dan riwayat perubahan admin; akun elsadianri10@gmail.com menjadi admin awal. Hak Pro serta data keuangan dipertahankan.
+
+
+## Upgrade Neon dari 022 ke 031
+
+Untuk Neon yang belum menjalankan migrasi 023–031, jalankan seluruh `upgrades/neon_upgrade_023_031.sql` pada branch/database yang digunakan backend. File ini menggabungkan sembilan migrasi dalam satu transaksi tanpa reset atau penghapusan data keuangan. Migrasi 027 memulai trial 30 hari bagi akun lama yang belum memiliki trial; migrasi 031 menetapkan `admin_f=1` untuk elsadianri10@gmail.com. Eksekusi ulang tidak memperpanjang trial yang sudah dimulai.
+
+File `upgrades/neon_repair_023_025.sql` hanya mencakup tiga migrasi tersebut dan tidak cukup untuk Neon yang belum menerima 026–031. Setelah menjalankan gabungan 023–031, tidak perlu menjalankan file asal 023–031 lagi. Jangan memakai `000_init.sql` untuk upgrade database berisi data. Status migrasi PostgreSQL lokal tidak membuktikan status database Neon.

@@ -198,6 +198,12 @@ async def save_plan(payload, user_id, month, db, item_id=None):
     from app.services.payment_sync_service import lock_owner
     await lock_owner(user_id, db)
     plan = await owned(RoutinePlan, item_id, user_id, db, True) if item_id else RoutinePlan(id=uuid4(), user_id=user_id, version=1)
+    previous_payments = len(await active_payments(plan.id, db)) if item_id else 0
+    was_active = bool(item_id and plan.status == 'ACTIVE' and (not plan.total_cycles or plan.initial_paid + previous_payments < plan.total_cycles))
+    will_be_active = payload.status == 'ACTIVE' and (not payload.total_cycles or payload.initial_paid + previous_payments < payload.total_cycles)
+    if will_be_active and not was_active:
+        from app.services.plan_service import check_new_slot
+        await check_new_slot('routine', user_id, db)
     if item_id:
         if payload.version != plan.version:
             raise HTTPException(409, 'Data berubah; muat ulang')

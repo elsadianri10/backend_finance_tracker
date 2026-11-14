@@ -66,6 +66,8 @@ async def list_owned(user, db):
 
 
 async def create(payload, user, db):
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     row = Wishlist(user_id=user.id, **payload.model_dump())
     db.add(row)
     await db.flush()
@@ -76,6 +78,8 @@ async def create(payload, user, db):
 
 async def update(list_id, payload, user, db):
     row = await owned(list_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     row.name = payload.name
     row.kind = payload.kind
     if row.kind not in GIFTABLE:
@@ -95,6 +99,8 @@ async def remove(list_id, user, db):
 
 async def add_group(list_id, payload, user, db):
     row = await owned(list_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     db.add(WishlistGroup(wishlist_id=row.id, name=payload.name))
     await db.commit()
     return (await output([row], user.id, db))[0]
@@ -102,6 +108,8 @@ async def add_group(list_id, payload, user, db):
 
 async def change_group(list_id, group_id, payload, user, db):
     row = await owned(list_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     group = await db.scalar(select(WishlistGroup).where(WishlistGroup.id == group_id, WishlistGroup.wishlist_id == row.id))
     if group is None:
         raise HTTPException(404, 'Grup tidak ditemukan')
@@ -117,6 +125,8 @@ async def change_group(list_id, group_id, payload, user, db):
 
 async def save_item(list_id, item_id, payload, user, db, uploads=None):
     row = await owned(list_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     group = await db.scalar(select(WishlistGroup).where(WishlistGroup.id == payload.group_id, WishlistGroup.wishlist_id == row.id))
     if group is None:
         raise HTTPException(404, 'Grup tidak ditemukan')
@@ -200,6 +210,8 @@ async def remove_item(list_id, item_id, user, db):
 
 async def share(list_id, user, db):
     row = await owned(list_id, user, db)
+    from app.services.access_service import require_pro
+    await require_pro(user.id, db)
     token = secrets.token_urlsafe(32)
     row.share_hash = hashlib.sha256(token.encode()).hexdigest()
     row.share_mode = 'reserve' if row.kind in GIFTABLE else 'view'

@@ -10,6 +10,7 @@ from app.models.routine_model import LedgerTransaction
 
 
 class PaymentSyncTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     asyncSetUp = fixture.BillingTests.asyncSetUp
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers

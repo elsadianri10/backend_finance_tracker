@@ -6,6 +6,7 @@ from app.models import BillingAccount, BillingInstallment, BillingTransaction
 
 
 class AccountManagementTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     asyncSetUp = fixture.BillingTests.asyncSetUp
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers

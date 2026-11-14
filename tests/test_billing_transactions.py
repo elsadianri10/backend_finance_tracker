@@ -6,6 +6,7 @@ from app.services.billing_transaction_service import month_date
 
 
 class BillingTransactionTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     asyncSetUp = fixture.BillingTests.asyncSetUp
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers

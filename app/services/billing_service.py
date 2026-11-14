@@ -1,3 +1,4 @@
+from app.services.access_service import require_pro
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -34,6 +35,7 @@ def account_response(account: BillingAccount, platform_name: str, has_transactio
 
 
 async def create_account(payload: BillingAccountCreate, user_id: UUID, db: AsyncSession) -> dict:
+    await require_pro(user_id, db)
     platform = await db.get(BillingPlatform, payload.platform_id)
     if platform is None or not platform.is_active:
         raise HTTPException(422, "Platform is unavailable")
@@ -97,6 +99,7 @@ async def locked_account(account_id, user_id, db):
 
 
 async def update_account(account_id, payload: BillingAccountUpdate, user_id, db):
+    await require_pro(user_id, db)
     account = await locked_account(account_id, user_id, db)
     flags = (await account_flags([account_id], db)).get(account_id, (False, True))
     changed_platform = (account.platform_id, account.platform_type) != (payload.platform_id, payload.platform_type.value)

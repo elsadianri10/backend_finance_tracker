@@ -69,3 +69,13 @@ async def move(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.move(saving_id=saving_id, payload=payload, response=response, user=user, db=db)
+
+
+@router.post('/{saving_id}/archive')
+async def archive(saving_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.archive(saving_id, True, response, user, db)
+
+
+@router.post('/{saving_id}/restore')
+async def restore(saving_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.archive(saving_id, False, response, user, db)
