@@ -103,3 +103,14 @@ async def cleanup(urls):
             response.raise_for_status()
     except (httpx.HTTPError, HTTPException):
         logger.warning('Wishlist Blob cleanup failed; unused objects need storage cleanup')
+
+
+async def delete_verified(urls):
+    if not urls:return
+    validated=[private_url(url) for url in set(urls)]
+    try:
+        async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
+            response=await client.post(API+'/delete',headers=headers(),json={'urls':validated})
+            response.raise_for_status()
+    except httpx.HTTPError:
+        raise HTTPException(503,'Pembersihan gambar belum selesai; admin dapat mencoba kembali') from None

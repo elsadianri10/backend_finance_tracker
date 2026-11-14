@@ -36,3 +36,8 @@ async def delete(saving_id: UUID, user: User = Depends(get_current_user), db: As
 async def move(saving_id: UUID, payload: MovementCreate, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     response.headers['Cache-Control'] = 'no-store'
     return await service.add_movement(saving_id, payload, user.id, db)
+
+
+async def archive(item_id, archived, response, user, db):
+    response.headers['Cache-Control'] = 'no-store'
+    return await service.archive(item_id, archived, user.id, db)

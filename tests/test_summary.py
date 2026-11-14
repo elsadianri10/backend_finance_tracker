@@ -12,6 +12,7 @@ from app.models.billing_model import BillingAccount
 
 
 class SummaryTests(unittest.IsolatedAsyncioTestCase):
+    pro_access=True
     asyncSetUp = fixture.BillingTests.asyncSetUp
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers

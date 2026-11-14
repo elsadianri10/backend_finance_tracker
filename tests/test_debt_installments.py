@@ -6,6 +6,7 @@ import test_billing as fixture
 
 
 class DebtInstallmentTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     asyncSetUp=fixture.BillingTests.asyncSetUp
     asyncTearDown=fixture.BillingTests.asyncTearDown
     auth_headers=fixture.BillingTests.auth_headers

@@ -78,3 +78,13 @@ async def delete(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.delete(account_id=account_id, user=user, db=db)
+
+
+@router.post('/{account_id}/archive')
+async def archive(account_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.archive(account_id, True, response, user, db)
+
+
+@router.post('/{account_id}/restore')
+async def restore(account_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.archive(account_id, False, response, user, db)

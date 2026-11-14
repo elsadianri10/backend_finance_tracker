@@ -12,7 +12,7 @@ async def platforms(db):
 
 
 def response(account, name):
-    return {"Id": account.id, "PlatformId": account.platform_id, "PlatformName": name,
+    return {"Id": account.id, "Archived": bool(account.archived), "PlatformId": account.platform_id, "PlatformName": name,
             "AccountNumberMasked": masked(account.account_number_encrypted, account.id, account.user_id, "account"),
             "CardNumberMasked": masked(account.card_number_encrypted, account.id, account.user_id, "card"),
             "ValidThru": account.valid_thru, "AdminFee": int(account.admin_fee), "OthersFee": int(account.others_fee)}
@@ -34,6 +34,8 @@ async def provider(platform_id, db, existing=None):
 
 
 async def create(payload, user_id, db):
+    from app.services.plan_service import check_new_slot
+    await check_new_slot("bankAccounts", user_id, db)
     platform = await provider(payload.platform_id, db)
     account_id = uuid4()
     account = BankAccount(id=account_id, user_id=user_id, platform_id=payload.platform_id,
@@ -76,3 +78,15 @@ async def delete(account_id, user_id, db):
     account = await owned(account_id, user_id, db, True)
     await db.delete(account)
     await db.commit()
+
+
+async def archive(account_id, archived, user_id, db):
+    from app.models.user_model import User
+    from app.services.plan_service import check_new_slot
+    await db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+    item = await owned(account_id, user_id, db, True)
+    if item.archived and not archived:
+        await check_new_slot('bankAccounts', user_id, db)
+    item.archived = archived
+    await db.commit()
+    return await detail(account_id, user_id, db)

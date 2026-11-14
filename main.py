@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.config.db_config import engine
 from app.routes import (
-    stock_router, wishlist_router,
+    admin_auth_router, admin_role_router, deletion_router, subscription_router, access_router, stock_router, wishlist_router,
     transaction_export_router, passkey_router, auth_router, version_router, billing_router, debt_router, bank_account_router,
     savings_router, split_bill_router, routine_router, summary_router,
 )
@@ -35,6 +35,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Finance Tracker API", lifespan=lifespan)
+from app.helpers.request_diagnostics import RequestDiagnostics
+app.add_middleware(RequestDiagnostics)
 
 
 @app.exception_handler(RequestValidationError)
@@ -47,9 +49,14 @@ async def validation_error(request, exc: RequestValidationError):
     )
 
 
+app.include_router(admin_auth_router)
+app.include_router(admin_role_router)
+app.include_router(deletion_router)
 app.include_router(transaction_export_router)
 app.include_router(wishlist_router)
 app.include_router(stock_router)
+app.include_router(access_router)
+app.include_router(subscription_router)
 app.include_router(passkey_router)
 app.include_router(version_router)
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])

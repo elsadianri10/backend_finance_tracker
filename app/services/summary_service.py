@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from sqlalchemy import select, func, case
 from app.models.routine_model import LedgerTransaction
 from app.models.billing_model import BillingAccount
@@ -85,6 +85,34 @@ async def summary(user_id, month, db):
     bank_totals = dict(Count=len(bank_rows), MonthlyFees=sum(int(row.admin_fee+row.others_fee) for row in bank_rows))
     groups = await db.scalar(select(func.count()).select_from(SplitBillGroup).where(SplitBillGroup.user_id==user_id,
         SplitBillGroup.start_date<=end, SplitBillGroup.end_date>=start))
-    return dict(Month=month, AsOf=today.isoformat(), MonthTotals=month_totals, Savings=assets, Debts=balances,
+    from app.models import User, AccountAccess
+    from app.services.access_service import status
+    from app.services import stock_service
+    access = status(await db.get(AccountAccess, user_id))
+    reminders = []
+    horizon = (today + timedelta(days=7)).isoformat()
+    def due_reminder(kind, label, day, amount=None):
+        day = day.isoformat() if hasattr(day, 'isoformat') else day
+        if day and day <= horizon:
+            reminders.append(dict(Kind=kind, Label=label, Date=day, Amount=amount,
+                Severity='overdue' if day < today.isoformat() else 'today' if day == today.isoformat() else 'soon'))
+    for item in plans:
+        if item['Status']=='ACTIVE': due_reminder('routine', item['Name'], item['NextDueDate'], item['Amount'])
+    if access['EffectivePlan'] == 'PRO':
+        for item in pending: due_reminder('billing', item['Label'], item['Date'], item['Amount'])
+        for item in debts:
+            installments=[bill for bill in item.get('Installments',[]) if bill['RemainingPrincipal']>0]
+            upcoming=min(installments,key=lambda bill:bill['DueDate']) if installments else None
+            due_reminder('debts',item['PersonName'],upcoming['DueDate'] if upcoming else item.get('DueDate'),upcoming['RemainingPrincipal'] if upcoming else item['RemainingAmount'])
+        user = await db.get(User,user_id)
+        for need in await stock_service.listed(user,db):
+            products=[p for p in need['Products'] if p['ReplenishmentEligible']]
+            empty=bool(products) and all(p['ActiveCount']+p['ReserveCount']==0 for p in products)
+            if need['BuyReason'] or empty:
+                reminders.append(dict(Kind='stockNeeds',Label=need['Name'],Date=None,Amount=None,
+                    Severity='empty' if empty else 'stock',Reason=need['BuyReason'] or 'empty'))
+    reminders.sort(key=lambda item:(0 if item['Severity'] in {'overdue','empty'} else 1 if item['Severity']=='today' else 2,item['Date'] or today.isoformat(),item['Label'].casefold()))
+    reminder_total=len(reminders)
+    return dict(Reminders=reminders[:12],ReminderTotal=reminder_total,Month=month, AsOf=today.isoformat(), MonthTotals=month_totals, Savings=assets, Debts=balances,
         Routines=routine_totals, Bills=billing, Banks=bank_totals, SplitBillGroups=groups,
         NextRoutines=next_routines, NextBills=next_bills)

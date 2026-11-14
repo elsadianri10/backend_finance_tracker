@@ -213,3 +213,9 @@ app/logs/*.log*
 app/logs/*.txt
 app/logs/*.out
 app/logs/*.err
+
+.qa-artifacts/
+.database-backups/
+*.ftbackup
+
+*.deletion-manifest.csv

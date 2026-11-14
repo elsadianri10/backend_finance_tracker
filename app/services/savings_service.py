@@ -64,7 +64,7 @@ def response(item, movements):
     result = {''.join(p.capitalize() for p in field.split('_')): getattr(item, field) for field in
               ('id', 'kind', 'metal_type', 'name', 'opening_amount', 'start_date', 'bank_account_id', 'bank_name', 'bank_account_masked',
                'weight_per_piece', 'pieces', 'purchase_cost', 'price_per_gram', 'price_date', 'maturity_date', 'interest_rate', 'notes')}
-    result.update(Balance=balance, EstimatedValue=estimated, Movements=[{'Id': m.id, 'Sequence': m.sequence,
+    result.update(Archived=bool(item.archived), Balance=balance, EstimatedValue=estimated, Movements=[{'Id': m.id, 'Sequence': m.sequence,
                   'Direction': m.direction, 'Amount': m.amount, 'MovementDate': m.movement_date, 'Notes': m.notes} for m in movements])
     return result
 
@@ -95,6 +95,8 @@ async def set_values(item, payload, user_id, db):
 
 
 async def create(payload, user_id, db):
+    from app.services.plan_service import check_new_slot
+    await check_new_slot("savings", user_id, db)
     validate(payload)
     item = Saving(user_id=user_id)
     await set_values(item, payload, user_id, db)
@@ -180,3 +182,15 @@ async def add_movement(saving_id, payload, user_id, db, commit=True):
     if commit:
         await db.commit()
     return response(item, [*movements, movement])
+
+
+async def archive(saving_id, archived, user_id, db):
+    from app.models.user_model import User
+    from app.services.plan_service import check_new_slot
+    await db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+    item = await owned(saving_id, user_id, db, True)
+    if item.archived and not archived:
+        await check_new_slot('savings', user_id, db)
+    item.archived = archived
+    await db.commit()
+    return await detail(saving_id, user_id, db)

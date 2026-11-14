@@ -79,13 +79,16 @@ def verify_google_token(token: str) -> Mapping[str, Any]:
     return claims
 
 
-async def google_login(token: str, db: AsyncSession) -> dict:
+async def google_login(token: str, db: AsyncSession, portal: str = "finance") -> dict:
     settings.require_token_settings()
     claims = await run_in_threadpool(verify_google_token, token)
     user = await db.scalar(select(User).where(User.google_sub == claims["sub"]))
     now = datetime.now(timezone.utc)
     if user is None:
-        user = User(google_sub=claims["sub"], email=claims["email"], name="", last_login_at=now)
+        from app.config.admin_settings import is_owner_email
+        if portal == "admin" and not is_owner_email(claims["email"]):
+            raise HTTPException(403, "Akses admin diperlukan")
+        user = User(google_sub=claims["sub"], email=claims["email"], name="", last_login_at=now, admin_f=int(is_owner_email(claims["email"])))
         db.add(user)
         try:
             await db.flush()
@@ -98,22 +101,28 @@ async def google_login(token: str, db: AsyncSession) -> dict:
     if not user.is_active:
         await db.rollback()
         raise HTTPException(403, "Account is inactive")
+    if portal == "admin":
+        from app.services.access_service import require_admin
+        require_admin(user)
     user.email = claims["email"]
     user.name = str(claims.get("name") or claims["email"])[:255]
     picture = claims.get("picture")
     user.picture_url = picture[:2048] if isinstance(picture, str) else None
     user.last_login_at = now
+    from app.services.access_service import start_trial
+    if portal == "finance":
+        await start_trial(user, db, at=now)
     await db.commit()
     from app.services.passkey_service import pending_login
     return await pending_login(user, db)
 
 
-def issue_access(user: User, method: str) -> dict:
+def issue_access(user: User, method: str, portal: str = "finance") -> dict:
     now = datetime.now(timezone.utc)
     expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     token = jwt.encode({
         'sub': str(user.id), 'iat': now, 'exp': now + timedelta(seconds=expires_in),
-        'iss': settings.TOKEN_ISSUER, 'aud': settings.TOKEN_AUDIENCE, 'type': 'access',
+        'iss': settings.TOKEN_ISSUER, 'aud': settings.TOKEN_AUDIENCE, 'type': 'admin_access' if portal == 'admin' else 'access',
         'ver': user.auth_version, 'auth_method': method, 'auth_time': int(now.timestamp()),
     }, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return {'AccessToken': token, 'TokenType': 'bearer', 'ExpiresIn': expires_in, 'User': user}
@@ -133,8 +142,8 @@ def token_claims(token: str, kind: str = 'access') -> dict[str, Any]:
         raise HTTPException(401, 'Invalid or expired access token', headers={'WWW-Authenticate': 'Bearer'}) from exc
 
 
-async def user_from_access_token(token: str, db: AsyncSession) -> User:
-    claims = token_claims(token)
+async def user_from_access_token(token: str, db: AsyncSession, kind: str = "access") -> User:
+    claims = token_claims(token, kind)
     if claims.get('auth_method') not in ('passkey', 'recovery'):
         raise HTTPException(401, 'Login kembali dan daftarkan atau verifikasi passkey untuk membuka akun.')
     user_id = UUID(claims['sub'])

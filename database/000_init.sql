@@ -1,5 +1,5 @@
--- PostgreSQL consolidated baseline, including migrations 001-025.
--- New/empty database: run this file only. Do NOT run 001-025 afterwards.
+-- PostgreSQL consolidated baseline, including migrations 001-031.
+-- New/empty database: run this file only. Do NOT run 001-031 afterwards.
 -- DEFAULT RESET: truncates users, bank accounts, billing accounts/transactions/
 -- installments, debts, debt payments, savings, saving movements and split bill groups.
 -- Three-month settled-history visibility is a service rule, not a schema column.
@@ -28,10 +28,43 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at TIMESTAMPTZ NOT NULL,
     auth_version BIGINT NOT NULL DEFAULT 0,
+    admin_f SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_user_admin_f CHECK(admin_f IN (0,1)),
     CONSTRAINT ck_user_auth_version CHECK (auth_version >= 0),
     CONSTRAINT uq_users_google_sub UNIQUE (google_sub)
 );
 
+
+CREATE TABLE IF NOT EXISTS user_admin_audit (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    previous_f SMALLINT NOT NULL,
+    admin_f SMALLINT NOT NULL,
+    reason VARCHAR(500) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_admin_audit_flags CHECK(previous_f IN (0,1) AND admin_f IN (0,1))
+);
+CREATE INDEX IF NOT EXISTS ix_admin_audit_user_created ON user_admin_audit(user_id,created_at);
+
+CREATE TABLE IF NOT EXISTS account_deletions (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    subject_id UUID NOT NULL,
+    status VARCHAR(12) NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT ck_deletion_status CHECK (status IN ('PENDING','REVIEWING','CANCELLED','CLEANUP','COMPLETED'))
+);
+CREATE INDEX IF NOT EXISTS ix_deletion_status_created ON account_deletions(status,created_at);
+CREATE TABLE IF NOT EXISTS account_deletion_blobs (
+    id UUID PRIMARY KEY,
+    request_id UUID NOT NULL REFERENCES account_deletions(id) ON DELETE CASCADE,
+    url VARCHAR(2048) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_account_deletion_blobs_request_id ON account_deletion_blobs(request_id);
 
 CREATE TABLE IF NOT EXISTS user_passkeys (
     id UUID PRIMARY KEY,
@@ -150,7 +183,8 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
     admin_fee NUMERIC(18, 0) NOT NULL DEFAULT 0,
     others_fee NUMERIC(18, 0) NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT ck_bank_account_fees CHECK (admin_fee BETWEEN 0 AND 1000000000000 AND others_fee BETWEEN 0 AND 1000000000000)
+    CONSTRAINT ck_bank_account_fees CHECK (admin_fee BETWEEN 0 AND 1000000000000 AND others_fee BETWEEN 0 AND 1000000000000),
+    archived BOOLEAN NOT NULL DEFAULT false
 );
 CREATE INDEX IF NOT EXISTS ix_bank_accounts_user_id ON bank_accounts(user_id);
 
@@ -230,7 +264,8 @@ CREATE TABLE IF NOT EXISTS savings (
     CONSTRAINT ck_saving_metal_type CHECK (
         (kind = 'GOLD' AND metal_type IS NOT NULL AND metal_type IN ('GOLD','SILVER'))
         OR (kind <> 'GOLD' AND metal_type IS NULL)
-    )
+    ),
+    archived BOOLEAN NOT NULL DEFAULT false
 );
 CREATE INDEX IF NOT EXISTS ix_savings_user_id ON savings(user_id);
 CREATE TABLE IF NOT EXISTS saving_movements (
@@ -584,6 +619,93 @@ CREATE TABLE IF NOT EXISTS stock_events (
 );
 CREATE INDEX IF NOT EXISTS ix_stock_event_product ON stock_events (product_id, event_date);
 
+CREATE TABLE IF NOT EXISTS account_access (
+	user_id UUID NOT NULL,
+	subscription_plan VARCHAR(10) DEFAULT 'FREE' NOT NULL,
+	subscription_until TIMESTAMP WITH TIME ZONE,
+	complimentary BOOLEAN DEFAULT 'false' NOT NULL,
+	complimentary_until TIMESTAMP WITH TIME ZONE,
+	trial_started_at TIMESTAMPTZ,
+	trial_until TIMESTAMPTZ,
+	version INTEGER DEFAULT '1' NOT NULL,
+	PRIMARY KEY (user_id),
+	CONSTRAINT ck_access_plan CHECK (subscription_plan IN ('FREE','PRO')),
+	CONSTRAINT ck_access_version CHECK (version > 0),
+	CONSTRAINT ck_access_trial_dates CHECK ((trial_started_at IS NULL AND trial_until IS NULL) OR (trial_started_at IS NOT NULL AND trial_until IS NOT NULL AND trial_until > trial_started_at)),
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS access_audit (
+	id UUID NOT NULL,
+	user_id UUID NOT NULL,
+	actor_id UUID,
+	action VARCHAR(10) NOT NULL,
+	expires_at TIMESTAMP WITH TIME ZONE,
+	reason VARCHAR(500) NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT ck_access_audit_action CHECK (action IN ('GRANT','REVOKE')),
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE,
+	FOREIGN KEY(actor_id) REFERENCES users (id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_access_audit_target ON access_audit (user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS subscription_orders (
+	id UUID NOT NULL,
+	user_id UUID NOT NULL,
+	request_id UUID NOT NULL,
+	plan VARCHAR(10) NOT NULL,
+	amount INTEGER NOT NULL,
+	environment VARCHAR(10) NOT NULL,
+	auto_renew BOOLEAN NOT NULL,
+	consented_at TIMESTAMP WITH TIME ZONE,
+	consent_version VARCHAR(30),
+	state VARCHAR(12) DEFAULT 'PENDING' NOT NULL,
+	redirect_url VARCHAR(2048),
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	access_before TIMESTAMP WITH TIME ZONE,
+	renewal_state VARCHAR(12) DEFAULT 'NONE' NOT NULL,
+	provider_subscription_id VARCHAR(100),
+	next_charge_at TIMESTAMP WITH TIME ZONE,
+	setup_attempted_at TIMESTAMP WITH TIME ZONE,
+	cancel_requested_at TIMESTAMP WITH TIME ZONE,
+	cancelled_at TIMESTAMP WITH TIME ZONE,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_subscription_request UNIQUE (user_id, request_id),
+	CONSTRAINT ck_subscription_plan CHECK (plan IN ('MONTHLY','ANNUAL')),
+	CONSTRAINT ck_subscription_environment CHECK (environment IN ('sandbox','production')),
+	CONSTRAINT ck_subscription_amount CHECK (amount > 0),
+	CONSTRAINT ck_subscription_state CHECK (state IN ('PENDING','PAID','EXPIRED','CANCELLED','DENIED','REFUNDED','REVIEW')),
+	CONSTRAINT ck_subscription_renewal CHECK (renewal_state IN ('NONE','PENDING','CREATING','ACTIVE','REVIEW','CANCELLED','FAILED')),
+	CONSTRAINT ck_subscription_consent CHECK ((NOT auto_renew) OR (consented_at IS NOT NULL AND consent_version IS NOT NULL)),
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT,
+	UNIQUE (provider_subscription_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_subscription_user_created ON subscription_orders (user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS subscription_payments (
+	id UUID NOT NULL,
+	order_id UUID NOT NULL,
+	transaction_id VARCHAR(100) NOT NULL,
+	provider_order_id VARCHAR(100) NOT NULL,
+	environment VARCHAR(10) NOT NULL,
+	amount INTEGER NOT NULL,
+	state VARCHAR(10) NOT NULL,
+	paid_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	period_start TIMESTAMP WITH TIME ZONE NOT NULL,
+	period_end TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_subscription_transaction UNIQUE (environment, transaction_id),
+	CONSTRAINT uq_subscription_payment_order UNIQUE (environment, provider_order_id),
+	CONSTRAINT ck_subscription_payment_state CHECK (state IN ('PAID','REFUNDED')),
+	CONSTRAINT ck_subscription_payment_amount CHECK (amount > 0),
+	FOREIGN KEY(order_id) REFERENCES subscription_orders (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS ix_subscription_payment_order ON subscription_payments (order_id);
+
+
 DO $$
 DECLARE required_column RECORD;
 BEGIN
@@ -595,7 +717,7 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 025.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 031.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('wishlist_photos', 'blob_url'),
@@ -603,6 +725,15 @@ BEGIN
         ('stock_products', 'replenishment_paused'),
         ('stock_products', 'replenishment_snoozed_until'),
         ('users', 'auth_version'),
+        ('users', 'admin_f'),
+        ('account_access', 'version'),
+        ('account_access', 'trial_started_at'),
+        ('account_access', 'trial_until'),
+        ('access_audit', 'action'),
+        ('subscription_orders', 'consented_at'),
+        ('bank_accounts', 'archived'),
+        ('savings', 'archived'),
+        ('subscription_payments', 'period_end'),
         ('savings', 'opening_amount'),
         ('savings', 'metal_type'),
         ('savings', 'price_date'),
@@ -633,7 +764,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 025.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 031.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;
@@ -642,7 +773,7 @@ END $$;
 DO $$
 BEGIN
     IF current_setting('finance_tracker.reset')::boolean THEN
-        TRUNCATE TABLE stock_events, stock_products, stock_needs, wishlist_reservations, wishlist_photos, wishlist_items, wishlist_groups, wishlists, user_passkeys, passkey_challenges, passkey_recovery_codes, ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
+        TRUNCATE TABLE user_admin_audit, account_deletion_blobs, account_deletions, subscription_payments, subscription_orders, access_audit, account_access, stock_events, stock_products, stock_needs, wishlist_reservations, wishlist_photos, wishlist_items, wishlist_groups, wishlists, user_passkeys, passkey_challenges, passkey_recovery_codes, ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
             RESTART IDENTITY;
     END IF;
 END $$;
@@ -656,5 +787,7 @@ INSERT INTO wallet_providers (id, name, bank_f) VALUES
     (6, 'CareNow', 0),
     (7, 'Blibli Pay Later', 0)
 ON CONFLICT DO NOTHING;
+
+UPDATE users SET admin_f=1 WHERE lower(trim(email))='elsadianri10@gmail.com' AND admin_f<>1;
 
 COMMIT;

@@ -19,6 +19,7 @@ from app.helpers.billing_encryption import masked_account_number
 
 
 class BillingTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     async def asyncSetUp(self):
         self.key_patch = patch.dict(os.environ, {"ENCRYPTION_KEY": "ab" * 32})
         self.key_patch.start()
@@ -36,12 +37,15 @@ class BillingTests(unittest.IsolatedAsyncioTestCase):
         async with self.sessions() as db:
             now = datetime.now(timezone.utc)
             db.add_all([
-                User(id=self.user_id, google_sub="billing-user", email="test@example.test", name="Test", last_login_at=now),
+                User(id=self.user_id, admin_f=int(getattr(type(self), "admin_access", False)), google_sub="billing-user", email="test@example.test", name="Test", last_login_at=now),
                 User(id=self.other_id, google_sub="other-user", email="other@example.test", name="Other", last_login_at=now),
                 BillingPlatform(id=1, name="BCA", bank_f=1), BillingPlatform(id=2, name="GoPay Later"),
                 BillingPlatform(id=3, name="Inactive", is_active=False),
             ])
             await db.flush()
+            if getattr(type(self), 'pro_access', False):
+                from app.models.access_model import AccountAccess
+                db.add_all([AccountAccess(user_id=self.user_id,complimentary=True), AccountAccess(user_id=self.other_id,complimentary=True)])
             await db.commit()
         async def test_db():
             async with self.sessions() as db:
@@ -50,9 +54,9 @@ class BillingTests(unittest.IsolatedAsyncioTestCase):
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
         self.headers = self.auth_headers(self.user_id)
 
-    def auth_headers(self, user_id):
+    def auth_headers(self, user_id, portal="finance"):
         now = datetime.now(timezone.utc)
-        token = jwt.encode({"sub": str(user_id), "iat": now, "exp": now + timedelta(minutes=5), "type": "access", "auth_method": "passkey", "iss": settings.TOKEN_ISSUER, "aud": settings.TOKEN_AUDIENCE}, settings.SECRET_KEY, algorithm="HS256")
+        token = jwt.encode({"sub": str(user_id), "iat": now, "exp": now + timedelta(minutes=5), "type": "admin_access" if portal == "admin" else "access", "auth_method": "passkey", "iss": settings.TOKEN_ISSUER, "aud": settings.TOKEN_AUDIENCE}, settings.SECRET_KEY, algorithm="HS256")
         return {"Authorization": "Bearer " + token}
 
     async def asyncTearDown(self):

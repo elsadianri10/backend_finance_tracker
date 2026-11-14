@@ -3,7 +3,10 @@ from importlib import import_module
 from types import ModuleType
 from typing import TYPE_CHECKING
 
+from .deletion_schema import DeletionSubmit, DeletionReview
 from .base_schema import PascalModel
+from .access_schema import AccessChange
+from .subscription_schema import SubscriptionCheckout
 from .auth_schema import GoogleLoginRequest, UserResponse, LoginResponse, PendingLoginResponse
 from .bank_account_schema import BankAccountCreate, BankAccountUpdate, BankAccountResponse, WalletProviderResponse
 from .billing_schema import PlatformType, BillingAccountCreate, BillingPlatformResponse, BillingAccountUpdate, BillingAccountResponse
@@ -14,6 +17,11 @@ from .savings_schema import SavingCreate, MovementCreate, MovementResponse, Savi
 from .split_bill_schema import Participant, ItemShare, BillItem, Charge, Expense, GroupCreate, GroupUpdate
 
 if TYPE_CHECKING:
+    from . import admin_role_schema
+    from . import deletion_schema
+    from . import subscription_schema
+
+    from . import access_schema
     from . import stock_schema
     from . import wishlist_schema
     from . import transaction_export_schema
@@ -31,6 +39,12 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "admin_role_schema",
+    "DeletionSubmit", "DeletionReview",
+    "deletion_schema",
+    "subscription_schema", "SubscriptionCheckout",
+
+    "access_schema", "AccessChange",
     "stock_schema",
     "wishlist_schema",
     "transaction_export_schema",

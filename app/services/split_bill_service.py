@@ -1,6 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 from fastapi import HTTPException
-from sqlalchemy import select, delete, insert
+from sqlalchemy import select, delete, insert, func
 from app.models.split_bill_model import SplitBillGroup, SplitBillParticipant, SplitBillExpense, SplitBillItem, SplitBillShare
 from app.schemas.split_bill_schema import GroupCreate
 
@@ -171,7 +171,12 @@ async def owned(group_id, user_id, db, lock=False):
 
 
 async def delete_group(group_id, user_id, db):
-    await db.delete(await owned(group_id, user_id, db, True))
+    item = await owned(group_id, user_id, db, True)
+    # PostgreSQL checks participant references while cascading a group delete.
+    # Remove dependants in FK order before deleting participants and the group.
+    for model in (SplitBillShare, SplitBillItem, SplitBillExpense, SplitBillParticipant):
+        await db.execute(delete(model).where(model.group_id == item.id))
+    await db.delete(item)
     await db.commit()
 
 
@@ -182,6 +187,16 @@ async def list_groups(user_id, db):
 
 async def save(payload, user_id, db, group_id=None):
     calculate(payload)
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.models.user_model import User
+    from app.services.access_service import require_pro
+    await db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+    today = datetime.now(ZoneInfo('Asia/Jakarta')).date()
+    previous = await owned(group_id, user_id, db, True) if group_id else None
+    if payload.end_date >= today and (previous is None or previous.end_date < today):
+        from app.services.plan_service import check_new_slot
+        await check_new_slot('splitBills', user_id, db)
     if group_id is None:
         item = SplitBillGroup(user_id=user_id, version=1)
         db.add(item)
@@ -216,3 +231,10 @@ async def save(payload, user_id, db, group_id=None):
     await db.commit()
     return result
 
+
+
+async def report(group_id, user_id, db):
+    item = await owned(group_id, user_id, db)
+    from app.services.access_service import require_pro
+    await require_pro(user_id, db)
+    return await response(item, db)

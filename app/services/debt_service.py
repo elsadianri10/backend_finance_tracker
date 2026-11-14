@@ -1,3 +1,4 @@
+from app.services.access_service import require_pro
 from decimal import Decimal, ROUND_HALF_UP
 from typing import NoReturn
 from fastapi import HTTPException
@@ -156,6 +157,7 @@ async def payments_for(item, db):
 
 
 async def create(payload, user_id, db):
+    await require_pro(user_id, db)
     validate(payload)
     values = payload.model_dump(exclude={'source_bank_account_id', 'installment_amounts'})
     item = Debt(user_id=user_id, **values, installment_amounts=payload.installment_amounts or default_amounts(payload.principal, payload.installment_count))
@@ -185,6 +187,7 @@ async def detail(debt_id, user_id, db):
 
 
 async def update(debt_id, payload, user_id, db):
+    await require_pro(user_id, db)
     validate(payload)
     item = await owned(debt_id, user_id, db, lock=True)
     payments = await payments_for(item, db)
@@ -226,6 +229,7 @@ async def update(debt_id, payload, user_id, db):
 
 
 async def update_installments(debt_id, payload, user_id, db):
+    await require_pro(user_id, db)
     item = await owned(debt_id, user_id, db, lock=True)
     payments = await payments_for(item, db)
     if not item.installment_count:
@@ -270,6 +274,7 @@ async def sync_payment(item, payment, payload, user_id, db, repeat=False):
 
 
 async def add_payment(debt_id, payload, user_id, db, commit=True, sync=True):
+    await require_pro(user_id, db)
     from app.services.payment_sync_service import lock_owner
     from app.services.routine_service import bank_label
     await lock_owner(user_id, db)

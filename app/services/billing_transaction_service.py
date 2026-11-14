@@ -1,3 +1,4 @@
+from app.services.access_service import require_pro
 from calendar import monthrange
 from datetime import date, datetime, timezone, timedelta
 from uuid import UUID
@@ -93,6 +94,7 @@ async def response(item: BillingTransaction, db: AsyncSession):
 
 
 async def create(account_id, payload: TransactionCreate, user_id, db):
+    await require_pro(user_id, db)
     account = await owned_account(account_id, user_id, db)
     subscription = payload.transaction_kind == 'SUBSCRIPTION'
     count = payload.tenor or 1
@@ -164,6 +166,7 @@ async def detail(transaction_id, user_id, db):
 
 
 async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sync=True, bank_id=None, notes='', saving_id=None):
+    await require_pro(user_id, db)
     from app.services.payment_sync_service import lock_owner, billing_ledger
     await lock_owner(user_id, db)
     item = await owned_transaction(transaction_id, user_id, db, lock=True)
@@ -186,6 +189,7 @@ async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sy
 
 
 async def update_last(transaction_id, amount, user_id, db):
+    await require_pro(user_id, db)
     item = await owned_transaction(transaction_id, user_id, db, lock=True)
     if item.transaction_kind == 'SUBSCRIPTION':
         raise HTTPException(409, "Use subscription amount to change future bills")
@@ -200,6 +204,7 @@ async def update_last(transaction_id, amount, user_id, db):
 
 
 async def update_subscription(transaction_id, amount, user_id, db):
+    await require_pro(user_id, db)
     item = await owned_transaction(transaction_id, user_id, db, lock=True)
     if item.transaction_kind != 'SUBSCRIPTION' or item.stopped_on is not None:
         raise HTTPException(409, "Only an active subscription can be changed")
@@ -212,6 +217,7 @@ async def update_subscription(transaction_id, amount, user_id, db):
 
 
 async def stop_subscription(transaction_id, user_id, db):
+    await require_pro(user_id, db)
     item = await owned_transaction(transaction_id, user_id, db, lock=True)
     if item.transaction_kind != 'SUBSCRIPTION':
         raise HTTPException(409, "Transaction is not a subscription")

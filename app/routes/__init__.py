@@ -1,3 +1,8 @@
+from .admin_auth_route import router as admin_auth_router
+from .admin_role_route import router as admin_role_router
+from .deletion_route import router as deletion_router
+from .subscription_route import router as subscription_router
+from .access_route import router as access_router
 from .stock_route import router as stock_router
 from .transaction_export_route import router as transaction_export_router
 from .wishlist_route import router as wishlist_router
@@ -13,6 +18,11 @@ from .split_bill_route import router as split_bill_router
 from .summary_route import router as summary_router
 
 __all__ = [
+    "admin_auth_router",
+    "admin_role_router",
+    "deletion_router",
+    "subscription_router",
+    "access_router",
     'stock_router',
     'wishlist_router',
     "transaction_export_router",

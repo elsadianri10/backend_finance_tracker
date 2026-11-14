@@ -5,6 +5,12 @@ from typing import TYPE_CHECKING
 from .version_controller import get_version
 
 if TYPE_CHECKING:
+    from . import admin_auth_controller
+    from . import admin_role_controller
+    from . import deletion_controller
+    from . import subscription_controller
+
+    from . import access_controller
     from . import stock_controller
     from . import wishlist_controller
     from . import transaction_export_controller
@@ -23,6 +29,12 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "admin_auth_controller",
+    "admin_role_controller",
+    "deletion_controller",
+    "subscription_controller",
+
+    "access_controller",
     "stock_controller",
     "wishlist_controller",
     "transaction_export_controller",

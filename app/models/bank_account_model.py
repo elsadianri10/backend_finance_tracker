@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, Text, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base_model import Base
 
@@ -20,4 +20,5 @@ class BankAccount(Base):
     valid_thru: Mapped[str] = mapped_column(String(7), nullable=False)
     admin_fee: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
     others_fee: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
