@@ -7,6 +7,7 @@ from datetime import date
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from check_debt_installment_migration import engine, snapshot
+from synthetic_database import reset_synthetic_schema
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import User, StockNeed, StockProduct
 from app.schemas.stock_schema import PurchaseInput, NeedAction, DeleteNeedInput, ProductInput, DeleteProductInput
@@ -21,10 +22,11 @@ async def check():
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
             baseline = (ROOT/'database/000_init.sql').read_text(encoding='utf-8')
-            await db.execute(baseline.replace("set_config('finance_tracker.reset', 'on', true)", "set_config('finance_tracker.reset', 'off', true)"))
+            await db.execute(baseline)
             await db.execute('DROP TABLE stock_events, stock_products, stock_needs')
             owner_id = uuid4()
             await db.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'stock-synthetic','synthetic@example.test','Synthetic',NOW())", owner_id)
+            await db.execute('INSERT INTO account_access(user_id,complimentary,version) VALUES($1,true,1)', owner_id)
             await db.execute("INSERT INTO debts(id,user_id,kind,person_name,principal,transaction_date,interest_type,interest_rate) VALUES($1,$2,'DEBT','Synthetic',1000,'2026-10-01','NONE',0)", uuid4(), owner_id)
             tables = [r['tablename'] for r in await db.fetch('SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ORDER BY tablename')]
             before = await snapshot(db, tables)
@@ -100,7 +102,7 @@ async def check():
                 session.add(StockNeed(user_id=owner_id, name='Reset check', category='health', subcategory='vitamins', mode='manual'))
                 await session.commit()
             await db.execute('CREATE TABLE stock_sentinel(value INTEGER); INSERT INTO stock_sentinel VALUES(42)')
-            await db.execute(baseline)
+            await reset_synthetic_schema(db, schema)
             for table in ('stock_needs','stock_products','stock_events'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
             assert await db.fetchval('SELECT value FROM stock_sentinel') == 42

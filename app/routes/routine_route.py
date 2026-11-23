@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Response
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, Response
 from app.controllers import routine_controller as controller
 from app.config.db_config import get_db
 from app.controllers.auth_controller import get_current_user
@@ -7,6 +9,7 @@ from app.schemas.routine_schema import (
     RoutineUpdate,
     PaymentInput,
     TransactionInput,
+    TransactionUpdate,
     ImportInput,
 )
 from uuid import UUID
@@ -107,8 +110,13 @@ async def remove(plan_id: UUID, user=Depends(get_current_user), db=Depends(get_d
 
 
 @router.get('/transactions')
-async def transactions(response: Response, user=Depends(get_current_user), db=Depends(get_db)):
-    return await controller.transactions(response=response, user=user, db=db)
+async def transactions(
+    response: Response,
+    month: Annotated[str | None, Query(pattern=controller.month_pattern)] = None,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    return await controller.transactions(response=response, month=month, user=user, db=db)
 
 
 @router.post('/transactions', status_code=201)
@@ -124,7 +132,7 @@ async def transaction_create(
 @router.patch('/transactions/{item_id}')
 async def transaction_update(
     item_id: UUID,
-    payload: TransactionInput,
+    payload: TransactionUpdate,
     response: Response,
     user=Depends(get_current_user),
     db=Depends(get_db),

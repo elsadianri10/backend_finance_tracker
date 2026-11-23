@@ -36,7 +36,7 @@ async def check(apply=False):
                 schema = 'payment_sync_test_' + uuid4().hex
                 await raw.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
                 init = baseline_016((ROOT / 'database/000_init.sql').read_text(encoding='utf-8'))
-                await raw.execute(init.replace("set_config('finance_tracker.reset', 'on', true)", "set_config('finance_tracker.reset', 'off', true)"))
+                await raw.execute(init)
                 owner, plan, payment = uuid4(), uuid4(), uuid4()
                 await raw.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'synthetic','synthetic@example.test','Synthetic',NOW())", owner)
                 await raw.execute("INSERT INTO routine_plans(id,user_id,kind,recipient,name,amount,status,first_due_date,interval_months,total_cycles,initial_paid,notes,version) VALUES($1,$2,'CONTRIBUTION','Family','Existing',1000,'ACTIVE','2026-10-01',1,12,0,'',3)", plan, owner)

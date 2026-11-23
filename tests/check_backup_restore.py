@@ -23,7 +23,7 @@ async def check():
         db=(await connection.get_raw_connection()).driver_connection
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
-            baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8').replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)")
+            baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8')
             await db.execute(baseline)
             user,saving=uuid4(),uuid4()
             await db.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'restore-synthetic','synthetic@example.test','Synthetic',NOW())",user)

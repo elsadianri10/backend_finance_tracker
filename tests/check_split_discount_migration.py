@@ -23,8 +23,7 @@ async def check(apply=False):
                 baseline = '\n'.join(line for line in baseline.splitlines()
                     if 'discount BIGINT' not in line and 'ck_split_discount' not in line
                     and "('split_bill_expenses', 'discount')" not in line)
-                await db.execute(baseline.replace("set_config('finance_tracker.reset', 'on', true)",
-                                                 "set_config('finance_tracker.reset', 'off', true)"))
+                await db.execute(baseline)
                 user, group, payer, other, expense, item = [uuid4() for _ in range(6)]
                 await db.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'synthetic','synthetic@example.test','Synthetic',NOW())", user)
                 await db.execute("INSERT INTO split_bill_groups(id,user_id,name,start_date,end_date,version) VALUES($1,$2,'Synthetic','2026-10-01','2026-10-31',1)", group, user)

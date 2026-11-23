@@ -1,10 +1,11 @@
 from calendar import monthrange
 from datetime import date, timedelta
-from sqlalchemy import select, func, case
+from sqlalchemy import and_, select, func, case
 from app.models.routine_model import LedgerTransaction
 from app.models.billing_model import BillingAccount
 from app.models.billing_transaction_model import BillingTransaction, BillingInstallment
 from app.models.bank_account_model import BankAccount
+from app.models.savings_model import Saving, SavingMovement
 from app.models.split_bill_model import SplitBillGroup
 from app.services import routine_service, savings_service, debt_service
 from app.services.billing_transaction_service import local_today, month_date, subscription_due
@@ -27,18 +28,27 @@ async def summary(user_id, month, db):
     earnings, received, expenses, allocation, withdrawn, count = map(int, row)
     month_totals = dict(Earnings=earnings, Expenses=expenses, ReceivableReceived=received, NetCashflow=earnings+received-expenses,
         AllocationTransferred=allocation, CashWithdrawn=withdrawn, TransactionsCount=count)
-    savings = await savings_service.list_savings(user_id, db)
+    balance = Saving.opening_amount + func.coalesce(func.sum(case(
+        (SavingMovement.direction == 'ADD', SavingMovement.amount),
+        else_=-SavingMovement.amount,
+    )), 0)
+    savings = await db.execute(select(Saving.kind, Saving.metal_type, Saving.price_per_gram, balance)
+        .outerjoin(SavingMovement, SavingMovement.saving_id == Saving.id)
+        .where(Saving.user_id == user_id)
+        .group_by(Saving.id, Saving.kind, Saving.metal_type, Saving.price_per_gram, Saving.opening_amount)
+        .order_by(Saving.name, Saving.id))
     assets: dict[str, int | float] = dict(CashBalance=0, DepositBalance=0, GoldGrams=0, SilverGrams=0, GoldValue=0, SilverValue=0, UnpricedMetalsCount=0)
-    for item in savings:
-        if item['Kind'] == 'CASH':
-            assets['CashBalance'] += int(item['Balance'])
-        elif item['Kind'] == 'DEPOSIT':
-            assets['DepositBalance'] += int(item['Balance'])
+    for kind, metal, price, amount in savings:
+        if kind == 'CASH':
+            assets['CashBalance'] += int(amount)
+        elif kind == 'DEPOSIT':
+            assets['DepositBalance'] += int(amount)
         else:
-            prefix = 'Silver' if item['MetalType'] == 'SILVER' else 'Gold'
-            assets[prefix+'Grams'] += float(item['Balance'])
-            assets[prefix+'Value'] += item['EstimatedValue'] or 0
-            assets['UnpricedMetalsCount'] += int(item['EstimatedValue'] is None)
+            prefix = 'Silver' if metal == 'SILVER' else 'Gold'
+            estimated = savings_service.estimated_metal_value(kind, price, amount)
+            assets[prefix+'Grams'] += float(amount)
+            assets[prefix+'Value'] += estimated or 0
+            assets['UnpricedMetalsCount'] += int(estimated is None)
     debts = await debt_service.list_debts(user_id, db)
     debts = [row for row in debts if not row['IsSettled']]
     balances = dict(Owed=sum(row['RemainingAmount'] for row in debts if row['Kind']=='DEBT'),
@@ -52,23 +62,25 @@ async def summary(user_id, month, db):
     next_routines = sorted([dict(Id=row['Id'], Label=(row['Recipient']+' · ' if row['Recipient'] else '')+row['Name'],
         Date=row['NextDueDate'], Amount=row['Amount']) for row in plans if row['Status']=='ACTIVE' and row['NextDueDate']],
         key=lambda row: (row['Date'], row['Label'].casefold()))[:5]
-    bill_rows = (await db.execute(select(BillingTransaction, BillingInstallment).join(BillingAccount, BillingAccount.id==BillingTransaction.account_id)
-        .outerjoin(BillingInstallment, BillingInstallment.transaction_id==BillingTransaction.id)
-        .where(BillingAccount.user_id==user_id))).all()
-    pending, grouped = [], {}
-    for transaction, installment in bill_rows:
-        grouped.setdefault(transaction.id, (transaction, {}))
-        if installment:
-            grouped[transaction.id][1][installment.sequence] = installment
-            if installment.paid_at is None:
-                pending.append(dict(Label=transaction.description, Date=installment.due_date.isoformat(), Amount=int(installment.amount)))
+    latest_sequence = select(func.max(BillingInstallment.sequence)).where(
+        BillingInstallment.transaction_id == BillingTransaction.id,
+    ).correlate(BillingTransaction).scalar_subquery()
+    bill_rows = await db.execute(select(BillingTransaction, BillingInstallment.due_date, BillingInstallment.amount,
+        case((BillingTransaction.transaction_kind == 'SUBSCRIPTION', latest_sequence)))
+        .join(BillingAccount, BillingAccount.id == BillingTransaction.account_id)
+        .outerjoin(BillingInstallment, and_(BillingInstallment.transaction_id == BillingTransaction.id,
+                                            BillingInstallment.paid_at.is_(None)))
+        .where(BillingAccount.user_id == user_id))
+    pending, subscriptions = [], {}
+    for transaction, due_date, amount, last_sequence in bill_rows:
+        if due_date is not None:
+            pending.append(dict(Label=transaction.description, Date=due_date.isoformat(), Amount=int(amount)))
+        if transaction.transaction_kind == 'SUBSCRIPTION':
+            subscriptions[transaction.id] = (transaction, last_sequence or 0)
     # Project accrued subscriptions without inserting installments during this GET.
-    for transaction, installments in grouped.values():
-        if transaction.transaction_kind != 'SUBSCRIPTION':
-            continue
+    for transaction, offset in subscriptions.values():
         through = min(today, transaction.stopped_on) if transaction.stopped_on else today
         anchor = transaction.transaction_date or transaction.first_installment
-        offset = max(installments, default=0)
         while True:
             charge = month_date(anchor, offset, anchor.day)
             if charge > through:

@@ -27,7 +27,7 @@ Lima tabel relasional baru: `wishlists`, `wishlist_groups`, `wishlist_items`, `w
 2. Jika migration 022 sudah diterapkan, jalankan **hanya** `database/023_wishlist_uploads.sql` untuk menambah kolom nullable `wishlist_photos.blob_url`. Migration dapat diulang, tidak menghapus/mengganti URL foto atau data keuangan.
 3. Buat store **Private** pada [Vercel Blob](https://vercel.com/docs/vercel-blob/private-storage), hubungkan ke proyek backend, lalu isi `BLOB_READ_WRITE_TOKEN` di environment backend (Production dan Preview sesuai kebutuhan). Jangan letakkan token di frontend atau variabel `NEXT_PUBLIC_*`. Pertahankan token/store yang sama agar foto lama tetap tersedia. Jika store public sudah dibuat, gunakan store private terpisah.
 4. Deploy backend dan frontend terbaru. Konfigurasi passkey yang sudah digunakan tetap berlaku.
-5. Database baru dapat memakai baseline 000 yang sudah mencakup 023. Mode reset 000 menghapus Wishlist juga, sehingga pemeriksaannya hanya dilakukan dalam schema sintetis.
+5. Database baru memakai baseline 000. Pengujian reset terpisah memakai schema sintetis.
 
 Perintah pengujian:
 
@@ -46,6 +46,14 @@ Upload multipart: `POST /wishlists/{list_id}/items/upload` atau `PATCH /wishlist
 
 Foto private ditampilkan melalui `/api/wishlists/images/{item_id}/{position}` di frontend (dengan versi URL agar foto yang diganti langsung dimuat ulang) yang meneruskan sesi ke backend `/wishlists/images/{item_id}/{position}`. URL Blob dan token penyimpanan tidak dikembalikan ke pengguna. Pemilik dapat melihat foto dengan sesi login; pengunjung memerlukan `?share={token}` dari link Wishlist aktif. Arsip tidak terlihat untuk pengunjung, rotasi/cabut link menghentikan akses selanjutnya. Respons foto memakai `private, no-store`, `nosniff`, `noindex`, dan `no-referrer`. Orang yang sudah melihat foto tetap dapat menyimpan salinannya sendiri. Link foto eksternal mengikuti pengaturan situs penyedia masing-masing.
 
-Foto yang dibuang saat edit/hapus barang, grup atau daftar dihapus dari Blob setelah database berhasil disimpan. Cleanup bersifat best effort: jika Blob sedang gagal atau token tidak tersedia, objek sisa bisa tetap tersimpan; log backend mencatat `Wishlist Blob cleanup failed` tanpa token/URL. Pengelola perlu meninjau objek yang tidak lagi direferensikan `wishlist_photos.blob_url` sebelum menghapusnya dari storage. Menghapus akun melalui cascade database atau mereset schema tidak otomatis menghapus Blob; cleanup storage juga perlu dilakukan oleh pengelola. Tidak ada reset database aplikasi dalam verifikasi.
+Saat foto diganti atau barang, grup, dan daftar dihapus, backend menyimpan pekerjaan pembersihan Blob dalam transaksi database yang sama. Backend mencoba menghapus Blob setelah commit dan menyimpan pekerjaan yang gagal untuk dicoba ulang. Sebelum menghapus, worker memeriksa apakah foto masih direferensikan. Link foto eksternal dan foto yang dipertahankan tidak diproses sebagai objek Blob.
+
+Untuk mengulang pekerjaan tertunda, jalankan perintah berikut dari repo backend dengan konfigurasi database dan token Blob yang sesuai. Perintah memproses maksimal 20 pekerjaan secara default dan mengembalikan kode 1 jika masih ada pekerjaan yang gagal pada percobaan itu. Jalankan kembali sesuai kebutuhan atau dari penjadwal operasional.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/retry_wishlist_cleanup.py --limit 20
+```
+
+Jika upload beberapa file gagal sebagian, backend mencoba mengantrekan Blob yang URL-nya sudah diterima setelah rollback. Jika database juga tidak dapat menyimpan antrean pada saat itu, investigasi storage masih diperlukan. Penghapusan akun melalui Portal Admin memakai antrean penghapusan akun tersendiri. Jika melakukan reset di luar alur Wishlist, tinjau kebutuhan pembersihan Blob yang masih dipakai sebelum reset.
 
 Upload dibatasi maksimal enam foto gabungan dan 450 KB per file setelah pemrosesan. Proxy membatasi multipart 2,8 MB (di bawah batas body fungsi Vercel); foto dari perangkat diperkecil otomatis sebelum dikirim. File tidak disimpan pada filesystem deployment. Sebelum konfigurasi Blob tersedia, link foto tetap bisa dipakai dan upload mengembalikan pesan penyimpanan belum dikonfigurasi. Pengujian otomatis memakai storage tiruan; uji upload nyata dilakukan setelah token/store private terpasang.

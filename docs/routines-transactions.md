@@ -1,6 +1,6 @@
 # Pengeluaran Rutin dan Transaksi
 
-Migration 016 menambahkan empat tabel relasional dengan nominal rupiah bulat BIGINT, tanggal DATE, FK kepemilikan, CHECK, dan indeks unik. Migration 017 menambahkan hubungan Hutang pada rencana serta DebtPaymentId dan pengenal request pada ledger. Tidak memakai JSON/JSONB. Migration tidak mengubah record keuangan lama. `000_init.sql` adalah baseline/reset, bukan upgrade database aplikasi.
+Migration 016 menambahkan empat tabel relasional dengan nominal rupiah bulat BIGINT, tanggal DATE, FK kepemilikan, CHECK, dan indeks unik. Migration 017 menambahkan hubungan Hutang pada rencana serta DebtPaymentId dan pengenal request pada ledger. Tidak memakai JSON/JSONB. Migration tidak mengubah record keuangan lama. Gunakan `000_init.sql` sebagai baseline dan jalankan migrasi bernomor untuk upgrade database aplikasi.
 
 ## Rencana
 
@@ -29,7 +29,11 @@ Konfirmasi Sudah Dibayar di Tagihan membuat ledger dengan tanggal paid_at saat k
 
 `GET/POST /transactions`, `PATCH/DELETE /transactions/{id}`. Payload: Kind income/expense/transfer, Description, Category, Amount, TransactionDate, SourceBankId, DestinationBankId, Notes. POST dapat mengirim satu dari DebtId, BillingInstallmentId, atau RoutinePlanId + RoutineSequence, dengan RequestId UUID. Pilihan penghubung menentukan catatan mana yang harus dibayar; memilih kategori saja tidak mengubah hutang/tagihan. RequestId dan hash payload mencegah pengulangan membuat pembayaran baru. Mutasi pembayaran diserialisasi per pengguna lalu mengunci parent; kepemilikan semua sumber dan rekening diperiksa. Pembayaran tertaut dan ledger commit bersama, termasuk rollback saat nominal/jadwal tidak valid. Penghapusan ledger manual memakai void; GET hanya mengembalikan record aktif.
 
-Untuk transaksi tertaut ke Tagihan, TransactionDate tidak mengganti tanggal konfirmasi; server memakai paid_at. Histori sebelum fitur sinkronisasi tidak dibuat ulang otomatis untuk menghindari penghitungan ganda dengan catatan lama.
+Saat membayar Tagihan baru dari Transaksi, server memakai TransactionDate sebagai tanggal pembayaran. Saat menautkan pembayaran Tagihan yang sudah lunas ke Pengeluaran Rutin, server memakai tanggal pembayaran yang sudah tercatat. Histori sebelum fitur sinkronisasi tidak dibuat ulang otomatis untuk menghindari penghitungan ganda.
+
+Respons API Transaksi menyertakan `Version`. Saat PATCH, kirim versi yang diterima ketika membuka form. Jika ada perubahan yang lebih baru, backend mengembalikan HTTP 409. Muat ulang daftar dan buka kembali transaksi sebelum mengedit. POST transaksi baru tetap tidak memerlukan versi.
+
+`GET /transactions?month=YYYY-MM` mengembalikan transaksi aktif yang tanggalnya jatuh pada bulan tersebut, dengan urutan dan struktur respons yang sama. Permintaan tanpa `month` tetap mengembalikan seluruh riwayat aktif. Perubahan backend ini menyediakan filter tanpa mengubah permintaan yang dikirim frontend saat ini.
 
 `POST /transactions/import` menerima Transactions dari struktur browser lama (id, description, type, category, amount, date). Import mengunci pengguna, membuat ID deterministik, dan menyimpan marker satu kali. Pengulangan tidak menggandakan data atau menghidupkan kembali transaksi yang dihapus. FE mempertahankan localStorage lama sebagai cadangan dan demo tetap terpisah. Import lama mencakup income/expense saja.
 

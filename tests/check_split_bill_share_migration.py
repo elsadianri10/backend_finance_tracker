@@ -14,7 +14,7 @@ async def check():
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
             baseline = (ROOT/'database/000_init.sql').read_text(encoding='utf-8')
-            await db.execute(baseline.replace("set_config('finance_tracker.reset', 'on', true)", "set_config('finance_tracker.reset', 'off', true)"))
+            await db.execute(baseline)
             await db.execute('DROP TABLE split_bill_links')
             owner, group = uuid4(), uuid4()
             await db.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'synthetic-share','synthetic@example.test','Synthetic',NOW())", owner)

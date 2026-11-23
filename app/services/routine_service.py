@@ -26,7 +26,10 @@ def add_months(value, offset):
 
 
 async def owned(model, item_id, user_id, db, lock=False):
-    row = await db.scalar(select(model).where(model.id == item_id, model.user_id == user_id).with_for_update() if lock else select(model).where(model.id == item_id, model.user_id == user_id))
+    query = select(model).where(model.id == item_id, model.user_id == user_id)
+    if lock:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    row = await db.scalar(query)
     if row is None:
         raise HTTPException(404, 'Record not found')
     return row
@@ -40,7 +43,7 @@ async def bank_label(bank_id, user_id, db):
 
 
 def transaction_response(row):
-    return {'Id': str(row.id), 'Kind': row.kind, 'Category': row.category, 'Description': row.description,
+    return {'Id': str(row.id), 'Version': row.version, 'Kind': row.kind, 'Category': row.category, 'Description': row.description,
             'Amount': row.amount, 'TransactionDate': row.transaction_date.isoformat(), 'SourceBankId': str(row.source_bank_id) if row.source_bank_id else None,
             'DestinationBankId': str(row.destination_bank_id) if row.destination_bank_id else None, 'SourceLabel': row.source_label,
             'DestinationLabel': row.destination_label, 'Notes': row.notes, 'RoutinePaymentId': str(row.routine_payment_id) if row.routine_payment_id else None,
@@ -49,16 +52,27 @@ def transaction_response(row):
             'SavingMovementId': str(row.saving_movement_id) if row.saving_movement_id else None}
 
 
-async def list_transactions(user_id, db):
-    rows = await db.scalars(select(LedgerTransaction).where(LedgerTransaction.user_id == user_id, LedgerTransaction.voided_at.is_(None)).order_by(LedgerTransaction.transaction_date.desc(), LedgerTransaction.created_at.desc(), LedgerTransaction.id))
+async def list_transactions(user_id, db, month=None):
+    ledger = LedgerTransaction
+    query = select(
+        ledger.id, ledger.version, ledger.kind, ledger.category, ledger.description, ledger.amount,
+        ledger.transaction_date, ledger.source_bank_id, ledger.destination_bank_id, ledger.source_label,
+        ledger.destination_label, ledger.notes, ledger.routine_payment_id, ledger.billing_installment_id,
+        ledger.debt_payment_id, ledger.saving_movement_id,
+    ).where(ledger.user_id == user_id, ledger.voided_at.is_(None))
+    if month is not None:
+        start = date.fromisoformat(month + '-01')
+        end = start.replace(day=calendar.monthrange(start.year, start.month)[1])
+        query = query.where(ledger.transaction_date.between(start, end))
+    rows = await db.execute(query.order_by(ledger.transaction_date.desc(), ledger.created_at.desc(), ledger.id))
     return [transaction_response(row) for row in rows]
 
 
-async def save_transaction(payload, user_id, db, item_id=None):
+async def save_transaction(payload, user_id, db, item_id=None, *, expected_version=None):
     from hashlib import sha256
     from app.services.payment_sync_service import lock_owner
     await lock_owner(user_id, db)
-    fingerprint = sha256(payload.model_dump_json(exclude={'request_id'}).encode()).hexdigest()
+    fingerprint = sha256(payload.model_dump_json(exclude={'request_id', 'version'}).encode()).hexdigest()
     if not item_id and payload.request_id:
         repeat = await db.scalar(select(LedgerTransaction).where(LedgerTransaction.user_id == user_id, LedgerTransaction.request_id == payload.request_id))
         if repeat:
@@ -69,6 +83,8 @@ async def save_transaction(payload, user_id, db, item_id=None):
     linked = payload.debt_id or payload.billing_installment_id or payload.routine_plan_id
     if item_id and (row.routine_payment_id or row.billing_installment_id or row.debt_payment_id or row.saving_movement_id or row.voided_at or linked or payload.saving_id):
         raise HTTPException(409, 'Pembayaran tertaut diubah melalui menu asal')
+    if item_id and row.version != expected_version:
+        raise HTTPException(409, 'Transaksi sudah berubah. Muat ulang sebelum menyimpan.')
     source = await bank_label(payload.source_bank_id, user_id, db)
     destination = await bank_label(payload.destination_bank_id, user_id, db)
     if linked:
@@ -78,9 +94,10 @@ async def save_transaction(payload, user_id, db, item_id=None):
         result = transaction_response(row)
         await db.commit()
         return result
-    excluded = {'debt_id','billing_installment_id','routine_plan_id','routine_sequence','saving_id'}
+    excluded = {'debt_id','billing_installment_id','routine_plan_id','routine_sequence','saving_id','version'}
     if item_id:
         excluded.add('request_id')
+        row.version += 1
     for key, value in payload.model_dump(exclude=excluded).items():
         setattr(row, key, value)
     if not item_id:
@@ -277,7 +294,10 @@ async def pay(plan_id, payload, user_id, month, db, commit=True):
         if existing and existing.routine_payment_id:
             raise HTTPException(409, 'Pembayaran sudah terhubung ke rencana rutin')
         if bill.paid_at is None:
-            await billing.mark_paid(item.id, bill.id, user_id, db, commit=False, sync=False)
+            await billing.mark_paid(
+                item.id, bill.id, user_id, db, commit=False, sync=False,
+                payment_date=payload.payment_date,
+            )
         ledger = await billing_ledger(item, bill, user_id, db, payload.source_bank_id, payload.notes, plan, payload.request_id)
         await fund_expense(ledger, payload.saving_id, user_id, db, repeat=existing is not None)
         await db.flush()
@@ -371,7 +391,10 @@ async def linked_transaction(payload, user_id, db):
         item = await billing.owned_transaction(bill.transaction_id, user_id, db, lock=True)
         if payload.kind != 'expense' or payload.amount != bill.amount:
             invalid('Pembayaran Tagihan harus Pengeluaran dengan nominal tepat')
-        await billing.mark_paid(item.id, bill.id, user_id, db, commit=False, bank_id=payload.source_bank_id, notes=payload.notes, saving_id=payload.saving_id)
+        await billing.mark_paid(
+            item.id, bill.id, user_id, db, commit=False, bank_id=payload.source_bank_id,
+            notes=payload.notes, saving_id=payload.saving_id, payment_date=payload.transaction_date,
+        )
         return await db.scalar(select(LedgerTransaction).where(LedgerTransaction.billing_installment_id == bill.id, LedgerTransaction.voided_at.is_(None)))
     plan = await owned(RoutinePlan, payload.routine_plan_id, user_id, db, True)
     expected = 'transfer' if plan.kind == 'TRANSFER' else 'expense'

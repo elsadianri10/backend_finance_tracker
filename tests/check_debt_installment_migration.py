@@ -37,8 +37,7 @@ async def check(apply=False):
                 schema = 'debt_relational_test_' + uuid4().hex
                 await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
                 baseline = (ROOT / 'database/000_init.sql').read_text(encoding='utf-8')
-                await db.execute(baseline.replace("set_config('finance_tracker.reset', 'on', true)",
-                                                 "set_config('finance_tracker.reset', 'off', true)"))
+                await db.execute(baseline)
                 # Restore only the historical column layout in this synthetic schema.
                 await db.execute("DROP TABLE debt_installments; ALTER TABLE debts ADD COLUMN installment_amounts JSON NOT NULL DEFAULT '[]'")
                 owner = uuid4()

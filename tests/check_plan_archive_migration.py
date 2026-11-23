@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from check_debt_installment_migration import engine,snapshot
+from synthetic_database import reset_synthetic_schema
 
 async def check():
     schema='plan_archive_test_'+uuid4().hex
@@ -12,7 +13,7 @@ async def check():
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
             base=(ROOT/'database/000_init.sql').read_text(encoding='utf-8')
-            keep=base.replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)")
+            keep=base
             await db.execute(keep)
             await db.execute('ALTER TABLE bank_accounts DROP COLUMN archived; ALTER TABLE savings DROP COLUMN archived')
             user,bank,saving=uuid4(),uuid4(),uuid4()
@@ -31,7 +32,7 @@ async def check():
             populated=await snapshot(db,tables)
             await db.execute(sql);await db.execute(keep)
             assert populated==await snapshot(db,tables)
-            await db.execute(base)
+            await reset_synthetic_schema(db, schema)
             assert await db.fetchval('SELECT COUNT(*) FROM users')==0
             print('PASS: additive/repeated 029 preserves all old fields and balances; archive flags survive repeat/baseline; reset only in synthetic schema.')
         finally:

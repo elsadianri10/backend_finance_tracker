@@ -10,6 +10,21 @@
 
 ## [v.1.0.0-Unrelease]
 ## 23 November 2026
+### Tindak lanjut audit backend 6–7
+- Ringkasan menghitung saldo Savings di database dan membaca rincian Tagihan yang belum lunas beserta nomor cicilan terakhir untuk proyeksi langganan.
+- API Transaksi membaca kolom respons saja dan menyediakan filter bulan opsional.
+- Log exception database menyertakan kategori dan SQLSTATE yang valid, dengan referensi yang sama seperti respons.
+
+### Tindak lanjut audit backend 4–5
+- Edit Transaksi memakai versi awal dari form. Simpan dengan versi lama ditolak dengan HTTP 409.
+- Penghapusan Blob Wishlist memakai antrean yang disimpan di database. Jalankan `scripts/retry_wishlist_cleanup.py` untuk mencoba ulang pekerjaan yang masih tertunda.
+- Migrasi 034 menambah versi transaksi dan tabel antrean tanpa mengubah nominal, tanggal, atau foto yang tersimpan.
+
+### Tindak lanjut audit backend 1–3
+- Pembayaran Tagihan lewat Transaksi atau Pengeluaran Rutin memakai tanggal yang dikirim, termasuk pada catatan Transaksi dan mutasi Savings.
+- Baseline 000 mempertahankan data lama. Reset dipisahkan dan memerlukan konfirmasi database serta schema.
+- Preflight memeriksa seluruh tabel dan kolom yang dipakai model serta constraint lama transfer. Kegagalan pemeriksaan skema menghasilkan kode keluar 1.
+
 ### Kategori Pindah Dana
 - API Transaksi menerima kategori **Pindah Dana** untuk transfer biasa antar rekening sendiri.
 - Ekspor PDF dan Excel menampilkan label Pindah Dana. Nilai transfer dikecualikan dari pemasukan dan pengeluaran. Tidak perlu migrasi database.

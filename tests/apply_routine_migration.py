@@ -27,13 +27,10 @@ async def check(apply=False):
                 await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
                 await connection.execute(text(f'SET search_path TO "{schema}"'))
                 baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8')
-                start=baseline.index('CREATE TABLE IF NOT EXISTS routine_plans')
-                end=baseline.index('DO $$\nDECLARE required_column RECORD;',start)
-                old=baseline[:start]+baseline[end:]
-                old=old.replace("('routine_plans', 'version'),\n        ",'').replace("('ledger_transactions', 'kind'),\n        ",'')
-                old=old.replace("('ledger_transactions', 'request_hash'),\n        ",'')
-                old=old.replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)")
-                await raw.execute(old.replace('BEGIN;','').replace('COMMIT;',''))
+                await raw.execute(baseline.replace('BEGIN;', '').replace('COMMIT;', ''))
+                # Drop the post-016 stock reference while preserving all other fixture tables.
+                await raw.execute('ALTER TABLE stock_events DROP CONSTRAINT stock_events_transaction_id_fkey')
+                await raw.execute('DROP TABLE transaction_imports, ledger_transactions, routine_payments, routine_plans')
                 owner=uuid4()
                 await connection.execute(text("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES(:id,'synthetic','synthetic@example.test','Synthetic',NOW())"),{'id':owner})
                 await connection.execute(text("INSERT INTO split_bill_groups(id,user_id,name,start_date,end_date,version) VALUES(:id,:owner,'Synthetic existing','2026-10-01','2026-10-31',7)"),{'id':uuid4(),'owner':owner})
@@ -52,9 +49,10 @@ async def check(apply=False):
                 assert not await connection.scalar(text("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name IN ('routine_plans','routine_payments','ledger_transactions','transaction_imports') AND data_type IN ('json','jsonb')"))
             print('PASS: 016 applied; all existing tables/records unchanged, four new relational tables empty, no JSON/JSONB.')
             if not apply:
-                # Keep the 016 upgrade assertions independent; current ORM also needs 017.
-                follow_up=(ROOT/'database/017_payment_sync.sql').read_text(encoding='utf-8').replace('BEGIN;','').replace('COMMIT;','')
-                await raw.execute(follow_up)
+                # Keep the 016 upgrade assertions independent of the current ORM columns.
+                for name in ('017_payment_sync.sql', '018_savings_sync.sql', '034_transaction_versions_wishlist_cleanup.sql'):
+                    follow_up=(ROOT/'database'/name).read_text(encoding='utf-8')
+                    await raw.execute(follow_up)
                 async with AsyncSession(bind=connection,expire_on_commit=False) as db:
                     plan=await service.save_plan(RoutineInput.model_validate({'Kind':'CONTRIBUTION','Recipient':'Family','Name':'Temporary assistance','Amount':200000,'FirstDueDate':'2026-10-31','TotalCycles':24,'InitialPaid':23}),owner,'2026-10',db)
                     from uuid import UUID
@@ -72,7 +70,7 @@ async def check(apply=False):
             await connection.rollback()
             if schema:
                 await connection.execute(text('SET search_path TO public'))
-                await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+                await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
                 await connection.commit()
     await engine.dispose()
 

@@ -21,8 +21,7 @@ async def check(apply=False):
                 schema = 'passkey_test_' + uuid4().hex
                 await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
                 baseline = (ROOT / 'database/000_init.sql').read_text(encoding='utf-8')
-                await db.execute(baseline.replace("set_config('finance_tracker.reset', 'on', true)",
-                                                 "set_config('finance_tracker.reset', 'off', true)"))
+                await db.execute(baseline)
                 await db.execute('DROP TABLE passkey_challenges, passkey_recovery_codes, user_passkeys; ALTER TABLE users DROP COLUMN auth_version')
                 owner = uuid4()
                 await db.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'synthetic','synthetic@example.test','Synthetic',NOW())", owner)

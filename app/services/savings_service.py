@@ -60,13 +60,19 @@ async def movements_for(item, db):
 
 def response(item, movements):
     balance = item.opening_amount + sum((m.amount if m.direction == 'ADD' else -m.amount for m in movements), Decimal(0))
-    estimated = int((balance * item.price_per_gram).quantize(Decimal(1), rounding=ROUND_HALF_UP)) if item.kind == 'GOLD' and item.price_per_gram else None
+    estimated = estimated_metal_value(item.kind, item.price_per_gram, balance)
     result = {''.join(p.capitalize() for p in field.split('_')): getattr(item, field) for field in
               ('id', 'kind', 'metal_type', 'name', 'opening_amount', 'start_date', 'bank_account_id', 'bank_name', 'bank_account_masked',
                'weight_per_piece', 'pieces', 'purchase_cost', 'price_per_gram', 'price_date', 'maturity_date', 'interest_rate', 'notes')}
     result.update(Archived=bool(item.archived), Balance=balance, EstimatedValue=estimated, Movements=[{'Id': m.id, 'Sequence': m.sequence,
                   'Direction': m.direction, 'Amount': m.amount, 'MovementDate': m.movement_date, 'Notes': m.notes} for m in movements])
     return result
+
+
+def estimated_metal_value(kind, price_per_gram, balance):
+    if kind == 'GOLD' and price_per_gram:
+        return int((balance * price_per_gram).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    return None
 
 
 async def set_values(item, payload, user_id, db):

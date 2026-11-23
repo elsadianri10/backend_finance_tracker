@@ -62,6 +62,7 @@ class LedgerTransaction(Base):
         UniqueConstraint('user_id', 'request_id', name='uq_ledger_request'),
         CheckConstraint("kind IN ('income','expense','transfer')", name='ck_ledger_kind'),
         CheckConstraint('amount > 0 AND amount <= 1000000000000', name='ck_ledger_amount'),
+        CheckConstraint('version > 0', name='ck_ledger_version'),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
@@ -83,6 +84,7 @@ class LedgerTransaction(Base):
     request_hash: Mapped[str | None] = mapped_column(String(64))
     legacy_id: Mapped[str | None] = mapped_column(String(200))
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(default=1, server_default='1')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

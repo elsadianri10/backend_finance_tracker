@@ -1,6 +1,6 @@
 # Script database PostgreSQL
 
-- `000_init.sql`: baseline lengkap sampai versi 029 untuk database kosong, sekaligus mengosongkan data aplikasi secara default dengan TRUNCATE; isi wallet_providers tetap dipertahankan. Mencakup seluruh tabel keuangan, Pengeluaran Rutin, ledger Transaksi, semua constraint/index, dan 7 platform default (termasuk Blibli Pay Later).
+- `000_init.sql`: baseline PostgreSQL sampai 034. Membuat struktur dan seed yang belum tersedia serta mempertahankan data yang ada. Gunakan migrasi bernomor untuk database lama.
 - `001_create_billing_accounts.sql`: platform bank/paylater, relasi tipe yang didukung, akun milik pengguna, dan seed BCA, BRI, GoPay Later, ShopeePay Later.
 - `002_create_billing_transactions.sql`: transaksi per akun dan jadwal cicilan, nominal NUMERIC, serta waktu pembayaran. Telah dijalankan pada database lokal 7 Oktober 2026. Database lain perlu menjalankan script ini sekali.
 - `003_merge_billing_platform_types.sql`: memindahkan tipe ke kolom nullable `billing_platforms.platform_type`, mempertahankan batasan tipe lama, mengganti foreign key akun, dan menghapus tabel relasi lama. Telah dijalankan pada database lokal 7 Oktober 2026. NULL mengizinkan kedua tipe akun.
@@ -22,8 +22,8 @@
 - `021_passkeys.sql`: menambah `users.auth_version` dan tiga tabel relasional passkey/challenge/kode pemulihan. Tidak mengubah data keuangan atau mengaktifkan passkey akun secara otomatis. Uji: `tests/check_passkey_migration.py`; `--apply` membuat backup dan membandingkan seluruh record sebelum commit. Diterapkan pada database proyek 12 Oktober 2026 tanpa reset. Konfigurasi domain/deployment: [Passkey](../docs/passkeys.md).
 - `025_stock_product_replenishment.sql`: dua kolom override jeda/penundaan beli ulang per produk, default lama tetap aktif. Jalankan setelah 024. Uji data terisi/upgrade berulang/baseline hanya di schema sintetis: `tests/check_stock_migration.py`.
 - `024_stock_needs.sql`: tiga tabel stok kebutuhan/produk/riwayat bertipe. Additive, tanpa perubahan data keuangan/Wishlist; jalankan setelah 023. Uji upgrade berulang, data terisi, pembelian bersamaan dan baseline/reset hanya dalam schema sintetis: `tests/check_stock_migration.py`.
-- Perubahan berikutnya memakai `034_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
-- Database baru: jalankan 000 saja; 001–029 sudah tergabung dan tidak perlu dijalankan lagi. Database lama: gunakan hanya migration yang belum diterapkan, berurutan dan sekali per database. Catat versi yang sudah diterapkan. Tidak ada auto-migration saat aplikasi mulai.
+- Perubahan berikutnya memakai `035_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
+- Database baru memakai 000 yang sudah mencakup 001–034. Database lama memakai migrasi yang belum diterapkan sesuai urutan. Catat versi yang sudah diterapkan. Migrasi dijalankan terpisah sebelum aplikasi mulai.
 - 000 adalah snapshot baseline terkini; perubahan 000 tidak dipakai untuk upgrade database yang sudah berjalan. Jangan ubah migration historis 001 dan seterusnya. Tambahkan file baru dengan `ALTER TABLE` atau `CREATE TABLE` dan transaksi `BEGIN` / `COMMIT`.
 - Buat database terlebih dahulu; script tidak membuat database atau user PostgreSQL.
 
@@ -32,20 +32,15 @@ createdb -h localhost -p 5432 -U postgres finance_tracker
 psql -h localhost -p 5432 -U postgres -d finance_tracker -v ON_ERROR_STOP=1 -f database/000_init.sql
 ```
 
-## Mode init dan reset
+## Inisialisasi, preflight, dan reset
 
-Di awal `000_init.sql` terdapat:
+Jalankan `000_init.sql` untuk schema baru. Untuk schema aplikasi yang sudah berjalan, terapkan migrasi bernomor yang belum ada. Perubahan pada baseline tidak menggantikan migrasi tersebut.
 
-```sql
-SELECT set_config('finance_tracker.reset', 'on', true);
-```
+Sebelum deploy, jalankan `.venv/Scripts/python.exe scripts/release_preflight.py` dengan konfigurasi database tujuan. Skrip hanya membaca database dan memeriksa tabel dan kolom yang dibutuhkan model serta constraint lama yang dilepas oleh migrasi 033. Kode keluar 1 berarti struktur wajib belum cocok atau pemeriksaan database gagal. Status `PENDING` untuk konfigurasi opsional tetap dilaporkan terpisah.
 
-- `on` (default): membuat tabel yang belum ada, lalu menjalankan `TRUNCATE` seluruh tabel aplikasi, termasuk `ledger_transactions`, `routine_payments`, `routine_plans`, dan `transaction_imports`. Semua grup Split Bill, rencana rutin dan pembayaran, ledger transaksi, simpanan, hutang/piutang, tagihan, akun, dan pengguna dihapus. Struktur tabel serta seluruh isi `wallet_providers` (termasuk platform custom/status aktif) tetap dipertahankan. Seed default yang belum ada ditambahkan tanpa menimpa platform lama. Akun Google perlu login kembali; kunci enkripsi tidak berubah.
-- `off`: hanya membuat tabel yang belum ada dan menambahkan seed yang belum ada; data aplikasi tidak dikosongkan.
+Reset data merupakan pemeliharaan terpisah melalui `reset_application_data.sql`. Skrip ini mengosongkan tabel aplikasi pada schema yang dipilih dan mempertahankan `wallet_providers` serta tabel lain. Untuk reset yang disengaja, hentikan backend, pastikan backup dan target sudah benar, lalu set `finance_tracker.confirm_reset` ke nama database dan schema tujuan, misalnya `finance_tracker_test.public`, pada sesi SQL yang sama. Reset menolak konfirmasi yang tidak sama dengan target aktif dan menghabiskan konfirmasi setelah berhasil. Jangan set konfirmasi menggunakan hasil otomatis dari koneksi yang belum diperiksa.
 
-Jalankan seluruh file memakai `psql ... -v ON_ERROR_STOP=1 -f database/000_init.sql`. Pastikan database/schema tujuan benar. Script bekerja di schema aktif (`search_path`), tidak memakai DROP maupun TRUNCATE CASCADE. Foreign key dari tabel lain dapat membuat reset gagal; seluruh operasi dibatalkan oleh transaksi. Struktur lama tetap perlu migration yang belum diterapkan sampai 022 sebelum menjalankan script ini. Matikan backend saat reset agar tidak ada request bersamaan.
-
-Reset belum dijalankan pada database aplikasi. Pengujian init/reset memakai schema acak dengan data sintetis:
+Pengujian baseline, reset, dan preflight memakai schema acak dengan data sintetis:
 
 ```powershell
 .\.venv\Scripts\python.exe tests/check_database_baseline.py
@@ -99,3 +94,9 @@ File `upgrades/neon_repair_023_025.sql` hanya mencakup tiga migrasi tersebut dan
 
 
 - `033_allow_same_account_transfers.sql`: melepas constraint `ck_ledger_distinct_banks` agar rekening sumber dan tujuan boleh sama pada transfer internal. Jalankan sebelum memakai backend yang mengizinkan transfer internal; tidak mengubah baris transaksi atau saldo lama. Uji: `tests/check_same_account_transfer_migration.py` dalam schema sintetis. File gabungan 023–031 tidak mencakup 032/033.
+
+- `034_transaction_versions_wishlist_cleanup.sql` memberi transaksi lama versi awal 1 dan menambah tabel antrean `wishlist_blob_cleanup`. Nominal, tanggal, dan referensi foto lama tetap tersimpan. Jalankan setelah 033 dan sebelum deploy backend baru. Reset terpisah mempertahankan antrean Blob yang belum selesai.
+
+## Upgrade Neon dari 025 ke 034
+
+Jika Neon sudah sampai 025, jalankan seluruh [gabungan migrasi 026–034](upgrades/neon_upgrade_026_034.sql) dalam satu kali eksekusi di SQL Editor. File memakai satu transaksi dan mempertahankan data keuangan. Migrasi 027 memulai trial 30 hari bagi akun lama yang belum punya trial, dan migrasi 031 menetapkan admin awal. Setelah berhasil, jalankan `scripts/release_preflight.py` dengan konfigurasi Neon tujuan sebelum deploy.

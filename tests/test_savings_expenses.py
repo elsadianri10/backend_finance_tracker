@@ -75,14 +75,18 @@ class SavingsExpenseTests(unittest.IsolatedAsyncioTestCase):
         for link, extra in [({'BillingTransactionId':bill},{'BillingInstallmentId':part}),({'DebtId':debt},{})]:
             plan = await self.plan(**link)
             path = '/routine/'+plan+'/payments?month=2026-10'
-            body = self.payment(**extra)
+            chosen = '2026-10-08' if 'BillingInstallmentId' in extra else '2026-10-09'
+            body = self.payment(**extra, PaymentDate=chosen)
             r = await self.client.post(path,headers=self.headers,json=body)
             self.assertEqual(r.status_code,201,r.text)
-            self.assertTrue(r.json()['Payments'][0]['Transaction']['SavingMovementId'])
+            recorded = r.json()['Payments'][0]['Transaction']
+            self.assertTrue(recorded['SavingMovementId'])
+            self.assertEqual(recorded['TransactionDate'], chosen)
             self.assertEqual((await self.client.post(path,headers=self.headers,json=body)).status_code,201)
         self.assertEqual(len(await self.get('/transactions')),2)
         saved = await self.get('/savings/'+self.saving)
         self.assertEqual((saved['Balance'],len(saved['Movements'])),(2000,2))
+        self.assertEqual([row['MovementDate'] for row in saved['Movements']], ['2026-10-08', '2026-10-09'])
         self.assertEqual((await self.get('/debts/'+debt))['RemainingAmount'],1500)
 
     async def test_direct_bill_success_and_insufficient_balance_rollback(self):

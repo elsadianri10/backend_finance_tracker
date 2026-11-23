@@ -1,5 +1,4 @@
 """Private Blob storage; credentials and upstream URLs never reach the browser."""
-import logging
 import os
 import re
 import warnings
@@ -13,7 +12,6 @@ from PIL import Image, ImageOps
 
 MAX_IMAGE_BYTES = 450_000
 API = 'https://vercel.com/api/blob'
-logger = logging.getLogger(__name__)
 
 
 def credentials():
@@ -92,25 +90,13 @@ async def read(url: str) -> bytes:
         raise HTTPException(503, 'Foto belum dapat dimuat. Silakan coba lagi.') from None
 
 
-async def cleanup(urls):
-    """Best effort after commit: storage failures must not undo a saved edit."""
+async def delete_verified(urls):
     if not urls:
         return
     try:
         validated = [private_url(url) for url in set(urls)]
-        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
             response = await client.post(API + '/delete', headers=headers(), json={'urls': validated})
             response.raise_for_status()
-    except (httpx.HTTPError, HTTPException):
-        logger.warning('Wishlist Blob cleanup failed; unused objects need storage cleanup')
-
-
-async def delete_verified(urls):
-    if not urls:return
-    validated=[private_url(url) for url in set(urls)]
-    try:
-        async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
-            response=await client.post(API+'/delete',headers=headers(),json={'urls':validated})
-            response.raise_for_status()
-    except httpx.HTTPError:
-        raise HTTPException(503,'Pembersihan gambar belum selesai; admin dapat mencoba kembali') from None
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(503, 'Pembersihan gambar belum selesai; admin dapat mencoba kembali') from None

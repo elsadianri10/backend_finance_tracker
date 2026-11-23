@@ -6,6 +6,7 @@ from uuid import uuid4
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from check_debt_installment_migration import engine, snapshot
+from synthetic_database import reset_synthetic_schema
 
 async def check():
     schema='subscription_test_'+uuid4().hex
@@ -14,7 +15,7 @@ async def check():
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
             baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8')
-            preserve=baseline.replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)")
+            preserve=baseline
             await db.execute(preserve)
             await db.execute('DROP TABLE subscription_payments, subscription_orders')
             user, debt, order, payment=uuid4(),uuid4(),uuid4(),uuid4()
@@ -36,7 +37,7 @@ async def check():
                 try:await db.execute(invalid)
                 except Exception:pass
                 else:raise AssertionError('constraint missing: '+invalid)
-            await db.execute(baseline)
+            await reset_synthetic_schema(db, schema)
             for table in ('users','debts','account_access','subscription_orders','subscription_payments'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM "{table}"')==0
             print('PASS: 028 upgrade/repeat preserve every old row; populated baseline preserves billing; constraints and synthetic reset verified.')
