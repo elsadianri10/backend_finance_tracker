@@ -298,6 +298,13 @@ CREATE TABLE IF NOT EXISTS split_bill_groups (
 	FOREIGN KEY(user_id) REFERENCES users (id)
 );
 
+-- Additive Split Bill share links. Existing groups remain private.
+CREATE TABLE IF NOT EXISTS split_bill_links (
+    group_id UUID PRIMARY KEY REFERENCES split_bill_groups(id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS split_bill_participants (
 	group_id UUID NOT NULL,
 	id UUID NOT NULL,
@@ -773,7 +780,7 @@ END $$;
 DO $$
 BEGIN
     IF current_setting('finance_tracker.reset')::boolean THEN
-        TRUNCATE TABLE user_admin_audit, account_deletion_blobs, account_deletions, subscription_payments, subscription_orders, access_audit, account_access, stock_events, stock_products, stock_needs, wishlist_reservations, wishlist_photos, wishlist_items, wishlist_groups, wishlists, user_passkeys, passkey_challenges, passkey_recovery_codes, ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
+        TRUNCATE TABLE split_bill_links, user_admin_audit, account_deletion_blobs, account_deletions, subscription_payments, subscription_orders, access_audit, account_access, stock_events, stock_products, stock_needs, wishlist_reservations, wishlist_photos, wishlist_items, wishlist_groups, wishlists, user_passkeys, passkey_challenges, passkey_recovery_codes, ledger_transactions, routine_payments, routine_plans, transaction_imports, split_bill_shares, split_bill_items, split_bill_expenses, split_bill_participants, split_bill_groups, saving_movements, savings, bank_accounts, debt_payments, debt_installments, debts, billing_installments, billing_transactions, billing_accounts, users
             RESTART IDENTITY;
     END IF;
 END $$;

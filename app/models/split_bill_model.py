@@ -101,3 +101,10 @@ class SplitBillShare(Base):
     amount: Mapped[int] = mapped_column(BigInteger)
     position: Mapped[int]
 
+
+
+class SplitBillLink(Base):
+    __tablename__ = 'split_bill_links'
+    group_id: Mapped[UUID] = mapped_column(ForeignKey('split_bill_groups.id', ondelete='CASCADE'), primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
