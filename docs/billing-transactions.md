@@ -67,3 +67,10 @@ Akun fixed: transaksi pada/sebelum BillingDate memakai bulan terbit yang sama; t
 Langganan: TransactionDate merupakan tanggal penagihan awal layanan. FirstInstallment menampilkan tanggal terbit pertama akun; LastInstallment tetap null. Pembuatan langganan bulanan memakai TransactionDate sebagai anchor ChargedOn, bukan tanggal terbit, agar tanggal langganan tidak bergeser. Snapshot tanggal akun tetap berlaku.
 
 Data lama TransactionDate null, tidak ditebak dari tanggal cicilan. Jadwal lama dipertahankan. Request klien lama tanpa TransactionDate masih bisa mengirim FirstInstallment/LastInstallment menggunakan aturan sebelumnya; form FE baru selalu mengirim TransactionDate.
+
+
+## Tanggal pembayaran cicilan
+
+`POST /billing/transactions/{transaction_id}/installments/{installment_id}/pay` menerima `PaymentDate` opsional dalam format YYYY-MM-DD, bersama `SavingId` dan `SourceBankId` yang sudah ada. UI memberi default hari ini dalam WIB dan mengizinkan tanggal lampau sejak 2000-01-01. Tanggal masa depan ditolak. Jika field tidak dikirim, perilaku klien lama tetap memakai waktu pencatatan saat ini.
+
+Tanggal yang dipilih disimpan pada `PaidAt` sebagai awal hari dalam WIB (dikonversi UTC); field ini tidak menyatakan jam pembayaran yang sebenarnya. Transaksi terkait serta mutasi Savings memakai tanggal kalender WIB yang sama. Status lunas, ledger, dan penarikan Savings tetap satu transaksi database: kegagalan validasi Savings membatalkan semuanya. Tanggal jatuh tempo tetap mengikuti jadwal cicilan dan tidak berubah. Tidak ada migrasi atau perubahan pembayaran historis.

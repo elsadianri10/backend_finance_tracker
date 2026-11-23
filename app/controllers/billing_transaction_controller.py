@@ -25,7 +25,7 @@ async def detail(transaction_id: UUID, response: Response, user: User = Depends(
 
 async def mark_paid(transaction_id: UUID, installment_id: UUID, response: Response, payload: BillingPaymentInput | None = None, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     response.headers["Cache-Control"] = "no-store"
-    result = await service.mark_paid(transaction_id, installment_id, user.id, db, bank_id=payload.source_bank_id if payload else None, saving_id=payload.saving_id if payload else None)
+    result = await service.mark_paid(transaction_id, installment_id, user.id, db, bank_id=payload.source_bank_id if payload else None, saving_id=payload.saving_id if payload else None, payment_date=payload.payment_date if payload else None)
     return result | {"SavingUpdated": bool(payload and payload.saving_id)}
 
 

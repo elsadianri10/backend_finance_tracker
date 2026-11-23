@@ -104,8 +104,8 @@ class TransactionInput(PascalModel):
             raise ValueError('RequestId wajib untuk pencatatan tertaut')
         if self.routine_plan_id and not self.routine_sequence:
             raise ValueError('Pilih pembayaran rutin berikutnya')
-        if self.kind == 'transfer' and (not self.source_bank_id or not self.destination_bank_id or self.source_bank_id == self.destination_bank_id):
-            raise ValueError('Transfer memerlukan dua rekening berbeda milik sendiri')
+        if self.kind == 'transfer' and (not self.source_bank_id or not self.destination_bank_id):
+            raise ValueError('Transfer memerlukan rekening sumber dan tujuan milik sendiri')
         if self.category == 'cash_withdrawal':
             if self.kind != 'income' or self.destination_bank_id:
                 raise ValueError('Tarik Tunai menggunakan rekening sumber dan tujuan tunai')

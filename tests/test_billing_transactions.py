@@ -87,3 +87,33 @@ class BillingTransactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item['FirstInstallment'], '2028-01-17')
         self.assertEqual(item['LastInstallment'], '2028-03-17')
         self.assertEqual([bill['DueDate'] for bill in item['Installments']], ['2028-01-31','2028-02-29','2028-03-31'])
+
+    async def test_selected_payment_date_syncs_ledger_in_wib(self):
+        item = (await self.transaction()).json()
+        bill = item['Installments'][0]
+        path = f"/billing/transactions/{item['Id']}/installments/{bill['Id']}/pay"
+        chosen = '2026-10-09'
+        result = await self.client.post(path, headers=self.headers, json={'PaymentDate': chosen})
+        self.assertEqual(result.status_code, 200, result.text)
+        stamp = datetime.fromisoformat(result.json()['Installments'][0]['PaidAt'].replace('Z', '+00:00'))
+        self.assertEqual(stamp.astimezone(timezone(timedelta(hours=7))).date().isoformat(), chosen)
+        records = (await self.client.get('/transactions', headers=self.headers)).json()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]['TransactionDate'], chosen)
+        self.assertEqual(records[0]['BillingInstallmentId'], bill['Id'])
+        repeated = await self.client.post(path, headers=self.headers, json={'PaymentDate': '2026-10-08'})
+        self.assertEqual(repeated.status_code, 409)
+        self.assertEqual(len((await self.client.get('/transactions', headers=self.headers)).json()), 1)
+
+    async def test_invalid_or_future_payment_dates_leave_installment_unpaid(self):
+        item = (await self.transaction()).json()
+        bill = item['Installments'][0]
+        path = f"/billing/transactions/{item['Id']}/installments/{bill['Id']}/pay"
+        for chosen in ['', '2026-02-30', '1999-12-31', '9999-01-01', '2099-12-31']:
+            with self.subTest(chosen=chosen):
+                result = await self.client.post(path, headers=self.headers, json={'PaymentDate': chosen})
+                self.assertEqual(result.status_code, 422, result.text)
+                self.assertIn('PaymentDate', result.json()['detail'][0]['loc'])
+                loaded = (await self.client.get(f"/billing/transactions/{item['Id']}", headers=self.headers)).json()
+                self.assertIsNone(loaded['Installments'][0]['PaidAt'])
+                self.assertEqual((await self.client.get('/transactions', headers=self.headers)).json(), [])

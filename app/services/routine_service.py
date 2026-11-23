@@ -263,8 +263,8 @@ async def pay(plan_id, payload, user_id, month, db, commit=True):
         raise HTTPException(409, 'Rencana tidak aktif atau cicilan sudah berubah')
     source = await bank_label(payload.source_bank_id, user_id, db)
     destination = await bank_label(plan.destination_bank_id, user_id, db) if plan.kind == 'TRANSFER' else ''
-    if plan.kind == 'TRANSFER' and (not payload.source_bank_id or not plan.destination_bank_id or payload.source_bank_id == plan.destination_bank_id):
-        invalid('Pilih dua rekening berbeda milik sendiri')
+    if plan.kind == 'TRANSFER' and (not payload.source_bank_id or not plan.destination_bank_id):
+        invalid('Pilih rekening sumber dan tujuan milik sendiri')
     if plan.billing_transaction_id:
         from app.services import billing_transaction_service as billing
         item = await billing.owned_transaction(plan.billing_transaction_id, user_id, db, lock=True)

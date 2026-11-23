@@ -23,8 +23,8 @@ async def record_origin(saving, movement, payload, user_id, db, repeat=False):
         savings_service.invalid('RecordTransaction', 'Pencatatan Transaksi memerlukan Tabungan Uang dengan rekening bank')
     destination = await bank_label(saving.bank_account_id, user_id, db)
     add = movement.direction == 'ADD'
-    if add and (not payload.source_bank_id or payload.source_bank_id == saving.bank_account_id):
-        savings_service.invalid('SourceBankId', 'Pilih rekening sumber yang berbeda dari rekening Savings')
+    if add and not payload.source_bank_id:
+        savings_service.invalid('SourceBankId', 'Pilih rekening sumber milik sendiri')
     if not add and payload.source_bank_id:
         savings_service.invalid('SourceBankId', 'Tarik Tunai memakai rekening Savings sebagai sumber')
     source = await bank_label(payload.source_bank_id, user_id, db) if add else destination

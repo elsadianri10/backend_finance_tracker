@@ -43,3 +43,6 @@ Semua pencatatan berada di transaksi DB yang sama dan dikunci berdasarkan pemili
 Form menampilkan pilihan Bayar dari Savings default off. Daftar dimuat saat dibutuhkan; sumber rekening mengikuti tabungan dan tombol simpan menunggu pilihan valid. Stok menyembunyikan serta membersihkan pilihan ketika RecordExpense dimatikan. Transaksi juga menerima SavingId bersama BillingInstallmentId/RoutinePlanId untuk pengeluaran. Respons SavingUpdated dan SavingMovementId mengarahkan refresh Savings, ledger dan ringkasan; tidak menambah Pendapatan atau Tarik Tunai fiktif.
 
 Verifikasi sintetis: tests/test_savings_expenses.py mencakup sukses/gagal, rollback, retry, undo, rutin terhubung utang/Tagihan, dan kedua titik masuk Transaksi. npm run test:routines memeriksa ketiga alur melalui proxy frontend dengan API SQLite in-memory. Data aplikasi tidak diubah.
+
+
+Sejak migrasi 033, rekening sumber boleh sama dengan rekening Savings untuk alokasi internal (misalnya kantong tabungan dalam BLU). Berlaku pada Transaksi, alokasi Pengeluaran Rutin, dan penambahan Savings dengan pencatatan Transaksi. Pemeriksaan kepemilikan rekening tetap berlaku. Satu alokasi tertaut tetap hanya membuat satu mutasi Savings; transfer tidak masuk Pendapatan/Pengeluaran. Batas jenis Savings yang didukung oleh sinkronisasi tidak berubah.

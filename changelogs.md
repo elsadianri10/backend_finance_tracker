@@ -9,14 +9,23 @@
 # Developer Changelogs:
 
 ## [v.1.0.0-Unrelease]
-## 23 November 2026 — Link berbagi Split Bill
+## 23 November 2026
+### Transfer internal dalam rekening yang sama
+- Rekening sumber dan tujuan boleh sama pada Transaksi, alokasi Pengeluaran Rutin, dan penambahan Savings yang dicatat sebagai Transaksi.
+- Tetap memeriksa kepemilikan rekening, mencegah mutasi Savings ganda pada pengiriman ulang, dan mengecualikan transfer dari pemasukan/pengeluaran.
+- Diperlukan migrasi 033 untuk melepas pembatas rekening berbeda; data lama dipertahankan.
 
+### Tanggal pembayaran cicilan
+- Konfirmasi pembayaran Tagihan menyediakan tanggal pembayaran, default hari ini (WIB), terpisah dari jatuh tempo.
+- Tanggal pilihan diterapkan ke status lunas, Transaksi, dan mutasi Savings; tanggal masa depan ditolak.
+- Detail cicilan menampilkan tanggal pembayaran setelah lunas. Tidak memerlukan migrasi database atau perubahan data lama.
+
+### Link berbagi Split Bill
 - Link publik hanya-baca per grup: rincian pengeluaran, peserta, pembagian dan saran transfer tanpa login.
 - Pemilik dapat membuat, mengganti, menyalin, atau mencabut link; link lama tidak berlaku setelah diganti/dicabut atau grup dihapus.
 - Hash token disimpan di tabel relasional; diperlukan migrasi 032.
 
 ### 2026-11-14
-
 - Koreksi ruang lingkup portal: /admin memiliki login dan sesi sendiri, tanpa tautan menu/tombol dari Finance Tracker. Cookie dan tujuan JWT admin/personal dipisahkan; backend memeriksa cakupan token pada setiap endpoint. Logout admin tidak mengeluarkan sesi personal dan sebaliknya. Google/passkey tetap dipakai, tidak memerlukan migrasi tambahan selain 031.
 
 - Dashboard /admin terpisah dengan login Google/passkey kembali ke dashboard. Pengelolaan pengguna/Pro dan permintaan penghapusan dipindah dari Profil Saya. users.admin_f 0/1 menentukan hak admin, pemilik awal elsadianri10@gmail.com, penunjukan/pencabutan admin disertai audit dan proteksi pemilik/admin terakhir. Form serta API pengajuan hapus akun diblokir untuk admin. Migration 031 diperlukan; data keuangan dan paket Pro tetap dipertahankan.

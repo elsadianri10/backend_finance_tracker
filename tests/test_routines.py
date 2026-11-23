@@ -7,6 +7,7 @@ from app.models.routine_model import LedgerTransaction, RoutinePayment
 
 
 class RoutineTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     asyncSetUp = fixture.BillingTests.asyncSetUp
     asyncTearDown = fixture.BillingTests.asyncTearDown
     auth_headers = fixture.BillingTests.auth_headers
@@ -83,7 +84,7 @@ class RoutineTests(unittest.IsolatedAsyncioTestCase):
     async def test_transfer_ownership_crud_and_validation(self):
         source,destination=await self.banks()
         plan=await self.create(Kind='TRANSFER',Recipient='Tabungan BLU',Amount=5000000,DestinationBankId=destination)
-        self.assertEqual((await self.pay(plan,SourceBankId=destination)).status_code,422)
+        self.assertEqual((await self.pay(plan,SourceBankId=None)).status_code,422)
         response=await self.pay(plan,SourceBankId=source)
         self.assertEqual(response.status_code,201,response.text)
         ledger=(await self.client.get('/transactions',headers=self.headers)).json()[0]

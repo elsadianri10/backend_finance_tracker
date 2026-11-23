@@ -77,6 +77,7 @@ class TransactionResponse(PascalModel):
 
 
 class BillingPaymentInput(PascalModel):
+    payment_date: date | None = Field(default=None, ge=date(2000, 1, 1), le=date(9997, 12, 31))
     source_bank_id: UUID | None = None
     saving_id: UUID | None = None
 

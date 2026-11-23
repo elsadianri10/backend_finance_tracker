@@ -22,7 +22,7 @@
 - `021_passkeys.sql`: menambah `users.auth_version` dan tiga tabel relasional passkey/challenge/kode pemulihan. Tidak mengubah data keuangan atau mengaktifkan passkey akun secara otomatis. Uji: `tests/check_passkey_migration.py`; `--apply` membuat backup dan membandingkan seluruh record sebelum commit. Diterapkan pada database proyek 12 Oktober 2026 tanpa reset. Konfigurasi domain/deployment: [Passkey](../docs/passkeys.md).
 - `025_stock_product_replenishment.sql`: dua kolom override jeda/penundaan beli ulang per produk, default lama tetap aktif. Jalankan setelah 024. Uji data terisi/upgrade berulang/baseline hanya di schema sintetis: `tests/check_stock_migration.py`.
 - `024_stock_needs.sql`: tiga tabel stok kebutuhan/produk/riwayat bertipe. Additive, tanpa perubahan data keuangan/Wishlist; jalankan setelah 023. Uji upgrade berulang, data terisi, pembelian bersamaan dan baseline/reset hanya dalam schema sintetis: `tests/check_stock_migration.py`.
-- Perubahan berikutnya memakai `033_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
+- Perubahan berikutnya memakai `034_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
 - Database baru: jalankan 000 saja; 001–029 sudah tergabung dan tidak perlu dijalankan lagi. Database lama: gunakan hanya migration yang belum diterapkan, berurutan dan sekali per database. Catat versi yang sudah diterapkan. Tidak ada auto-migration saat aplikasi mulai.
 - 000 adalah snapshot baseline terkini; perubahan 000 tidak dipakai untuk upgrade database yang sudah berjalan. Jangan ubah migration historis 001 dan seterusnya. Tambahkan file baru dengan `ALTER TABLE` atau `CREATE TABLE` dan transaksi `BEGIN` / `COMMIT`.
 - Buat database terlebih dahulu; script tidak membuat database atau user PostgreSQL.
@@ -96,3 +96,6 @@ File `upgrades/neon_repair_023_025.sql` hanya mencakup tiga migrasi tersebut dan
 
 
 - `032_split_bill_share_links.sql`: tabel hash link berbagi per grup Split Bill. Jalankan setelah 031 sebelum backend fitur berbagi dipasang. Grup lama tetap pribadi; tidak ada link yang otomatis dibuat. Hanya menambah tabel, tanpa mengubah data keuangan. Uji: `tests/check_split_bill_share_migration.py` memakai schema sintetis terpisah. Gabungan Neon 023–031 tidak mencakup 032; jalankan 032 setelah gabungan tersebut.
+
+
+- `033_allow_same_account_transfers.sql`: melepas constraint `ck_ledger_distinct_banks` agar rekening sumber dan tujuan boleh sama pada transfer internal. Jalankan sebelum memakai backend yang mengizinkan transfer internal; tidak mengubah baris transaksi atau saldo lama. Uji: `tests/check_same_account_transfer_migration.py` dalam schema sintetis. File gabungan 023–031 tidak mencakup 032/033.
