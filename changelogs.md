@@ -10,6 +10,10 @@
 
 ## [v.1.0.0-Unrelease]
 ## 23 November 2026
+### Kategori Pindah Dana
+- API Transaksi menerima kategori **Pindah Dana** untuk transfer biasa antar rekening sendiri.
+- Ekspor PDF dan Excel menampilkan label Pindah Dana. Nilai transfer dikecualikan dari pemasukan dan pengeluaran. Tidak perlu migrasi database.
+
 ### Transfer internal dalam rekening yang sama
 - Rekening sumber dan tujuan boleh sama pada Transaksi, alokasi Pengeluaran Rutin, dan penambahan Savings yang dicatat sebagai Transaksi.
 - Tetap memeriksa kepemilikan rekening, mencegah mutasi Savings ganda pada pengiriman ulang, dan mengecualikan transfer dari pemasukan/pengeluaran.

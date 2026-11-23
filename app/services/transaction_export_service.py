@@ -18,7 +18,7 @@ CATEGORIES = {
     'entertainment': 'Hiburan / Gaya Hidup', 'education': 'Pendidikan / Pengembangan Diri',
     'donation': 'Sedekah / Donasi / Hadiah', 'debt': 'Cicilan / Hutang', 'bonus': 'Bonus',
     'investment': 'Hasil Investasi', 'sales': 'Hasil Penjualan', 'receivable': 'Pengembalian Piutang',
-    'cash_withdrawal': 'Tarik Tunai',
+    'cash_withdrawal': 'Tarik Tunai', 'fund_transfer': 'Pindah Dana',
 }
 KINDS = {'income': 'Pemasukan', 'expense': 'Pengeluaran', 'transfer': 'Transfer Antar Rekening'}
 HEADERS = ['Tanggal', 'Deskripsi', 'Kategori', 'Jenis Transaksi', 'Nominal (Rp)', 'Rekening Sumber', 'Rekening Tujuan', 'Catatan']
