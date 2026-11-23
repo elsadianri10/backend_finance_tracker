@@ -31,7 +31,7 @@ async def check(apply=False):
                 schema = 'savings_sync_test_' + uuid4().hex
                 await raw.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
                 sql = baseline_017((ROOT / 'database/000_init.sql').read_text(encoding='utf-8'))
-                await raw.execute(sql.replace("set_config('finance_tracker.reset', 'on', true)", "set_config('finance_tracker.reset', 'off', true)"))
+                await raw.execute(sql)
                 user, saving = uuid4(), uuid4()
                 await raw.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'synthetic','synthetic@example.test','Synthetic',NOW())", user)
                 await raw.execute("INSERT INTO savings(id,user_id,kind,name,opening_amount,start_date,notes) VALUES($1,$2,'CASH','Existing',1000,'2026-10-01','')", saving, user)

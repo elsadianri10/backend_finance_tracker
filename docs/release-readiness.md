@@ -20,7 +20,9 @@ Midtrans masih nonaktif tanpa merchant. Selesaikan aktivasi, kunci Sandbox, meto
 
 029_plan_archives.sql bersifat tambahan dan berulang aman. Sudah diterapkan lokal dengan backup privat dan perbandingan seluruh kolom lama: identik. Neon produksi belum dimigrasikan. Terapkan migrasi berurutan yang belum ada setelah backup; jangan menjalankan 000_init.sql pada data aplikasi untuk upgrade/reset.
 
-Jalankan scripts/release_preflight.py untuk pemeriksaan read-only, tanpa mencetak rahasia. Status lokal tidak membuktikan kesiapan Vercel/Neon produksi.
+Jalankan `scripts/release_preflight.py` dengan konfigurasi database tujuan sebelum deploy. Pemeriksaan hanya membaca database dan mengembalikan kode keluar 1 jika tabel, kolom, atau aturan migrasi 033 belum cocok atau pemeriksaan database gagal. Hasil pada database lokal hanya berlaku untuk lingkungan lokal.
+
+Setelah 033, jalankan migrasi 034 agar preflight menemukan versi Transaksi dan tabel cleanup Wishlist. Deploy backend dan frontend dalam rilis yang sama. Tab yang masih menjalankan frontend lama perlu dimuat ulang sebelum edit Transaksi karena API PATCH mewajibkan versi.
 
 Tes akses, trial dan pembayaran memakai database sintetis/mock provider. Tes batas baru memeriksa 3 slot, archive/restore, data lama melebihi batas, semua sumber Pro, privasi serta paging riwayat. tests/check_plan_archive_migration.py dan check_database_baseline.py memakai schema acak. Tidak ada pembayaran nyata atau deploy otomatis.
 
@@ -62,6 +64,8 @@ Backend menambahkan X-Request-ID. Error tak tertangani mengembalikan pesan umum 
 Frontend memiliki error boundary dengan tombol coba lagi dan referensi. POST /api/diagnostics memakai same-origin, batas body dan batas 60 laporan/menit per instance; hanya menerima kode render_error, UUID referensi dan digest yang dibatasi. Tidak meneruskan message/stack atau state aplikasi. Log ini berada pada runtime aplikasi/Vercel, bukan dikirim ke layanan analitik pihak ketiga. Batas per instance bukan rate-limit global. Error yang sudah ditangani dalam form tetap menampilkan pesan form.
 
 Filter runtime logs berdasarkan request_failed/request_result/client_error dan referensi. Atur retensi, akses log, serta alert 5xx/latensi melalui fasilitas hosting setelah pengelola dan kontak dipilih. Belum ada email/SMS/alert ke pihak lain yang diaktifkan.
+
+Gunakan nilai `X-Request-ID` dari respons untuk mencari kedua event backend. Untuk exception database, `request_failed` menambahkan `category` dan menyertakan `sqlstate` bila kode driver valid. Kode `42P01` berarti tabel hilang dan `42703` berarti kolom hilang. Keduanya dapat diperiksa dengan preflight terhadap database tujuan. Statement SQL, parameter, maupun pesan driver tidak dicatat. Respons 5xx yang sudah ditangani tanpa exception tetap muncul di `request_result`.
 
 ## Backup terenkripsi dan restore setelah penghapusan
 

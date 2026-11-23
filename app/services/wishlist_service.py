@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from app.services import wishlist_image_service as images
+from app.services import wishlist_cleanup_service as cleanup
 from app.models import User
 from app.models.wishlist_model import Wishlist, WishlistGroup, WishlistItem, WishlistPhoto, WishlistReservation
 
@@ -91,9 +92,10 @@ async def update(list_id, payload, user, db):
 async def remove(list_id, user, db):
     row = await owned(list_id, user, db)
     blobs = await stored_photos(db, list_id=row.id)
+    jobs = cleanup.enqueue(db, blobs)
     await db.delete(row)
     await db.commit()
-    await images.cleanup(blobs)
+    await cleanup.after_commit(db, jobs)
     return {'Ok': True}
 
 
@@ -114,13 +116,15 @@ async def change_group(list_id, group_id, payload, user, db):
     if group is None:
         raise HTTPException(404, 'Grup tidak ditemukan')
     blobs = await stored_photos(db, group_id=group.id) if payload is None else []
+    jobs = cleanup.enqueue(db, blobs)
     if payload is None:
         await db.delete(group)
     else:
         group.name = payload.name
     await db.commit()
-    await images.cleanup(blobs)
-    return (await output([row], user.id, db))[0]
+    result = (await output([row], user.id, db))[0]
+    await cleanup.after_commit(db, jobs)
+    return result
 
 
 async def save_item(list_id, item_id, payload, user, db, uploads=None):
@@ -158,14 +162,16 @@ async def save_item(list_id, item_id, payload, user, db, uploads=None):
             for index, (url, blob) in enumerate(entries)])
         if item.status != 'wanted':
             await db.execute(delete(WishlistReservation).where(WishlistReservation.item_id == item.id))
+        used = {blob for _, blob in entries if blob}
+        jobs = cleanup.enqueue(db, [p.blob_url for p in old_photos if p.blob_url and p.blob_url not in used])
         await db.commit()
     except Exception:
         await db.rollback()
-        await images.cleanup(new_blobs)
+        await cleanup.after_failed_upload(db, new_blobs)
         raise
-    used = {blob for _, blob in entries if blob}
-    await images.cleanup([p.blob_url for p in old_photos if p.blob_url and p.blob_url not in used])
-    return (await output([row], user.id, db))[0]
+    result = (await output([row], user.id, db))[0]
+    await cleanup.after_commit(db, jobs)
+    return result
 
 
 async def photo(item_id, position, token, user, db):
@@ -202,10 +208,12 @@ async def remove_item(list_id, item_id, user, db):
     if item is None:
         raise HTTPException(404, 'Barang tidak ditemukan')
     blobs = await stored_photos(db, item_id=item.id)
+    jobs = cleanup.enqueue(db, blobs)
     await db.delete(item)
     await db.commit()
-    await images.cleanup(blobs)
-    return (await output([row], user.id, db))[0]
+    result = (await output([row], user.id, db))[0]
+    await cleanup.after_commit(db, jobs)
+    return result
 
 
 async def share(list_id, user, db):

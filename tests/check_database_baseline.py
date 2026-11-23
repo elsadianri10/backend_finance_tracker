@@ -2,23 +2,41 @@
 import asyncio
 import sys
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 import asyncpg
 from dotenv import load_dotenv
+from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 load_dotenv('.env')
-from app.config.db_config import engine
+from app.config.db_config import connect_args, engine
 from app.models import Base
+from app.schemas.routine_schema import TransactionUpdate
+from app.services.routine_service import save_transaction
+from scripts.release_preflight import check as run_preflight, schema_issues
+from synthetic_database import RESET_SQL, reset_synthetic_schema
+
+
+def schema_engine(schema: str):
+    return create_async_engine(
+        engine.url, connect_args={**connect_args, 'server_settings': {'search_path': schema}},
+    )
+
+
+async def preflight_status(schema: str) -> int:
+    isolated_engine = schema_engine(schema)
+    with patch('app.config.db_config.engine', isolated_engine):
+        return await run_preflight()
 
 
 async def check():
     schema = 'baseline_test_' + uuid4().hex
-    reset = Path('database/000_init.sql').read_text(encoding='utf-8')
-    sql = reset.replace("set_config('finance_tracker.reset', 'on', true)", "set_config('finance_tracker.reset', 'off', true)")
-    assert reset != sql
-    assert 'TRUNCATE TABLE' in reset and 'DROP TABLE' not in reset
+    sql = Path('database/000_init.sql').read_text(encoding='utf-8')
+    reset = RESET_SQL.read_text(encoding='utf-8')
+    assert 'TRUNCATE TABLE' not in sql and 'TRUNCATE TABLE' in reset
     async with engine.connect() as connection:
         raw = await connection.get_raw_connection()
         db = raw.driver_connection
@@ -83,7 +101,16 @@ async def check():
             await db.execute("UPDATE wallet_providers SET name='Custom BCA', is_active=false WHERE id=1")
             await db.execute("INSERT INTO wallet_providers(id,name,is_active) VALUES(99,'Custom Platform',false)")
             platforms_before = await db.fetch('SELECT * FROM wallet_providers ORDER BY id')
-            await db.execute(reset)
+            for confirmation in ('', 'wrong.database'):
+                await db.fetchval("SELECT set_config('finance_tracker.confirm_reset', $1, false)", confirmation)
+                try:
+                    await db.execute(reset)
+                    raise AssertionError('Reset must reject missing or incorrect confirmation')
+                except asyncpg.RaiseError as error:
+                    assert 'konfirmasi' in str(error)
+                assert await db.fetchval('SELECT COUNT(*) FROM users') == 1
+                assert await db.fetchval('SELECT COUNT(*) FROM ledger_transactions') == 1
+            await reset_synthetic_schema(db, schema)
             for table in ('user_passkeys', 'passkey_challenges', 'passkey_recovery_codes'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
             assert await db.fetchval('SELECT COUNT(*) FROM debt_installments') == 0
@@ -92,9 +119,66 @@ async def check():
             assert await db.fetch('SELECT * FROM wallet_providers ORDER BY id') == platforms_before
             assert await db.fetchval('SELECT value FROM baseline_sentinel') == 42
             assert await db.fetchval("SELECT to_regclass('billing_platform_types')") is None
-            await db.execute(reset)
+            await reset_synthetic_schema(db, schema)
             assert await db.fetch('SELECT * FROM wallet_providers ORDER BY id') == platforms_before
-            print('PASS: latest ORM schema, 7 seeds, non-destructive optional init, default/repeated TRUNCATE reset, custom platforms/statuses preserved, old schema guard, unrelated table preserved. Only synthetic schema used.')
+            assert not await schema_issues(connection)
+            await connection.rollback()
+            await db.execute("""
+                ALTER TABLE wishlist_photos DROP COLUMN blob_url;
+                DROP TABLE stock_events, stock_products, stock_needs, split_bill_links, wishlist_blob_cleanup;
+                ALTER TABLE ledger_transactions DROP COLUMN version;
+                ALTER TABLE ledger_transactions ADD CONSTRAINT ck_ledger_distinct_banks
+                    CHECK (source_bank_id IS NULL OR destination_bank_id IS NULL OR source_bank_id <> destination_bank_id);
+            """)
+            missing = '\n'.join(await schema_issues(connection))
+            await connection.rollback()
+            for required in ('blob_url', 'stock_events', 'stock_products', 'stock_needs', 'split_bill_links',
+                             'ledger_transactions (version)', 'wishlist_blob_cleanup', '033'):
+                assert required in missing, missing
+            assert await preflight_status(schema) == 1
+            for prefix in (23, 24, 32, 33):
+                migration = next(Path('database').glob(f'{prefix:03d}_*.sql'))
+                await db.execute(migration.read_text(encoding='utf-8'))
+            pending = await schema_issues(connection)
+            await connection.rollback()
+            assert pending == [
+                'Columns missing or inaccessible: ledger_transactions (version)',
+                'Columns missing or inaccessible: stock_products (replenishment_paused, replenishment_snoozed_until)',
+                'Table missing or inaccessible: wishlist_blob_cleanup',
+            ], pending
+            migration = next(Path('database').glob('025_*.sql'))
+            await db.execute(migration.read_text(encoding='utf-8'))
+            owner, ledger_id = uuid4(), uuid4()
+            await db.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'audit','audit@example.test','Synthetic',NOW())", owner)
+            await db.execute("""INSERT INTO ledger_transactions
+                (id,user_id,kind,category,description,amount,transaction_date,source_label,destination_label,notes)
+                VALUES($1,$2,'expense','family','Synthetic',1000,'2026-10-01','','','')""", ledger_id, owner)
+            migration = Path('database/034_transaction_versions_wishlist_cleanup.sql').read_text(encoding='utf-8')
+            await db.execute(migration)
+            assert tuple(await db.fetchrow('SELECT amount, version FROM ledger_transactions WHERE id=$1', ledger_id)) == (1000, 1)
+
+            isolated_engine = schema_engine(schema)
+            sessions = async_sessionmaker(isolated_engine, expire_on_commit=False)
+            async def edit(amount: int):
+                payload = TransactionUpdate(Kind='expense', Category='family', Description='Synthetic edit',
+                                            Amount=amount, TransactionDate='2026-10-01', Version=1)
+                async with sessions() as session:
+                    try:
+                        updated = await save_transaction(payload, owner, session, ledger_id, expected_version=payload.version)
+                        return 200, updated['Amount']
+                    except HTTPException as error:
+                        return error.status_code, amount
+            try:
+                results = await asyncio.gather(edit(2000), edit(3000))
+            finally:
+                await isolated_engine.dispose()
+            assert sorted(status for status, _ in results) == [200, 409], results
+            winner = next(amount for status, amount in results if status == 200)
+            await db.execute(migration)
+            assert tuple(await db.fetchrow('SELECT amount, version FROM ledger_transactions WHERE id=$1', ledger_id)) == (winner, 2)
+            assert await preflight_status(schema) == 0
+            print('PASS: safe baseline, guarded reset, and preflight before and after migrations 023–025/032–034 in an isolated synthetic schema.')
+            print('PASS: 034 preserves existing transactions and a competing edit with the same version receives 409.')
         finally:
             await db.execute('ROLLBACK')
             await db.execute('SET search_path TO public')

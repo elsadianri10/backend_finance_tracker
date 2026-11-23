@@ -145,7 +145,7 @@ class SavingsSyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(foreign.status_code, 404, foreign.text)
         plain = await self.client.post('/transactions', headers=self.headers, json=transfer)
         self.assertEqual(plain.status_code, 201, plain.text)
-        edited = await self.client.patch('/transactions/' + plain.json()['Id'], headers=self.headers, json=transfer | {'Amount': 300})
+        edited = await self.client.patch('/transactions/' + plain.json()['Id'], headers=self.headers, json=transfer | {'Amount': 300, 'Version': plain.json()['Version']})
         self.assertEqual(edited.status_code, 200, edited.text)
         linked = transfer | {'RequestId': str(uuid4()), 'SavingId': saving, 'Amount': 500}
         allocated = await self.client.post('/transactions', headers=self.headers, json=linked)

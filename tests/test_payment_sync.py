@@ -7,6 +7,7 @@ import test_billing as fixture
 from app.models.billing_model import BillingAccount
 from app.models.billing_transaction_model import BillingTransaction, BillingInstallment
 from app.models.routine_model import LedgerTransaction
+from app.services.payment_sync_service import local_date
 
 
 class PaymentSyncTests(unittest.IsolatedAsyncioTestCase):
@@ -132,6 +133,43 @@ class PaymentSyncTests(unittest.IsolatedAsyncioTestCase):
         current=(await self.client.get('/billing/transactions/'+item,headers=self.headers)).json()
         self.assertTrue(current['Installments'][0]['PaidAt'])
         self.assertIsNone(current['Installments'][1]['PaidAt'])
+
+    async def test_billing_payment_date_is_preserved_from_both_entry_points(self):
+        chosen = '2026-10-09'
+
+        class RecordedLater(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 11, 23, 5, tzinfo=timezone.utc)
+
+        for entry in ('transactions', 'routine'):
+            with self.subTest(entry=entry):
+                item, bills = await self.bill()
+                if entry == 'transactions':
+                    path = '/transactions'
+                    payload = self.transaction(
+                        BillingInstallmentId=bills[0], Amount=500, TransactionDate=chosen,
+                    )
+                else:
+                    plan = await self.plan(BillingTransactionId=item, Amount=500)
+                    path = '/routine/' + plan['Id'] + '/payments?month=2026-10'
+                    payload = {
+                        'RequestId': str(uuid4()), 'Sequence': 1, 'Amount': 500,
+                        'PaymentDate': chosen, 'BillingInstallmentId': bills[0],
+                    }
+
+                with patch('app.services.billing_transaction_service.datetime', RecordedLater):
+                    for _ in range(2):
+                        response = await self.client.post(path, headers=self.headers, json=payload)
+                        self.assertEqual(response.status_code, 201, response.text)
+                    self.assertEqual(len([row for row in await self.rows()
+                                          if row['BillingInstallmentId'] == bills[0]]), 1)
+                    ledger = next(row for row in await self.rows()
+                                  if row['BillingInstallmentId'] == bills[0])
+                    self.assertEqual(ledger['TransactionDate'], chosen)
+                    bill = (await self.client.get('/billing/transactions/' + item,
+                                                  headers=self.headers)).json()['Installments'][0]
+                    self.assertEqual(local_date(datetime.fromisoformat(bill['PaidAt'])).isoformat(), chosen)
 
     async def test_transaction_routine_sequence_atomic_and_stale(self):
         plan=await self.plan()

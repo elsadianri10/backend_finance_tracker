@@ -27,7 +27,7 @@ async def check():
             raw=(await conn.get_raw_connection()).driver_connection
             await raw.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
             try:
-                sql=(ROOT/'database/000_init.sql').read_text(encoding='utf-8').replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)")
+                sql=(ROOT/'database/000_init.sql').read_text(encoding='utf-8')
                 await raw.execute(sql)
             finally:await raw.execute('SET search_path TO public')
         test_engine=create_async_engine(engine.url,connect_args={'server_settings':{'search_path':schema}})

@@ -6,6 +6,7 @@ from uuid import uuid4
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from check_debt_installment_migration import engine, snapshot
+from synthetic_database import reset_synthetic_schema
 
 async def check():
     schema='access_test_'+uuid4().hex
@@ -14,7 +15,7 @@ async def check():
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
             baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8')
-            await db.execute(baseline.replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)"))
+            await db.execute(baseline)
             await db.execute('DROP TABLE access_audit, account_access')
             owner=uuid4()
             await db.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,'synthetic-access','owner@example.test','Owner',NOW())",owner)
@@ -31,9 +32,9 @@ async def check():
             assert populated==await snapshot(db,tables+['account_access','access_audit'])
             await db.execute((ROOT/'database/027_account_trial.sql').read_text(encoding='utf-8'))
             populated=await snapshot(db,tables+['account_access','access_audit'])
-            await db.execute(baseline.replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)"))
-            assert populated==await snapshot(db,tables+['account_access','access_audit'])
             await db.execute(baseline)
+            assert populated==await snapshot(db,tables+['account_access','access_audit'])
+            await reset_synthetic_schema(db, schema)
             for table in ('users','debts','account_access','access_audit'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM "{table}"')==0
             print('PASS: 026 additive/repeated, all previous rows preserved, grants/audit preserved on repeat/init, reset verified only in synthetic schema.')

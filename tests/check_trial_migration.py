@@ -7,6 +7,7 @@ from datetime import timedelta
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from check_debt_installment_migration import engine, snapshot
+from synthetic_database import reset_synthetic_schema
 
 async def check():
     schema='trial_test_'+uuid4().hex
@@ -15,7 +16,7 @@ async def check():
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
             baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8')
-            init=baseline.replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)")
+            init=baseline
             await db.execute(init)
             await db.execute('ALTER TABLE account_access DROP CONSTRAINT ck_access_trial_dates, DROP COLUMN trial_started_at, DROP COLUMN trial_until')
             owners=[uuid4() for _ in range(3)]
@@ -45,7 +46,7 @@ async def check():
             assert before==await snapshot(db,tables+['account_access'])
             await db.execute(init)
             assert before==await snapshot(db,tables+['account_access'])
-            await db.execute(baseline)
+            await reset_synthetic_schema(db, schema)
             for table in ('users','debts','account_access','access_audit'):
                 assert await db.fetchval(f'SELECT COUNT(*) FROM "{table}"')==0
             print('PASS: one 30-day trial for existing accounts; financial/grant/paid/audit data preserved; repeat never resets expired trials; baseline/init/reset verified only in synthetic schema.')

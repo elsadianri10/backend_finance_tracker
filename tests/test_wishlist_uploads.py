@@ -9,7 +9,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 import test_billing as fixture
 import test_wishlists as wishlist_fixture
-from app.models.wishlist_model import WishlistPhoto
+from app.models.wishlist_model import WishlistBlobCleanup, WishlistPhoto
+from app.services import wishlist_cleanup_service as cleanup_service
 from app.services import wishlist_image_service as images
 
 
@@ -42,7 +43,7 @@ class WishlistUploadTests(unittest.IsolatedAsyncioTestCase):
     async def test_upload_private_shared_revoke_and_cleanup(self):
         row = await self.create()
         blobs = ['https://test.private.blob.vercel-storage.com/wishlist/a.webp', 'https://test.private.blob.vercel-storage.com/wishlist/b.webp']
-        with patch.object(images, 'put', new=AsyncMock(side_effect=blobs)) as put, patch.object(images, 'read', new=AsyncMock(return_value=b'private-image')) as read, patch.object(images, 'cleanup', new=AsyncMock()) as cleanup:
+        with patch.object(images, 'put', new=AsyncMock(side_effect=blobs)) as put, patch.object(images, 'read', new=AsyncMock(return_value=b'private-image')) as read, patch.object(images, 'delete_verified', new=AsyncMock()) as cleanup:
             response = await self.upload(row, files=[('files', ('a.png', image_bytes(), 'image/png')), ('files', ('b.png', image_bytes(), 'image/png'))])
             self.assertEqual(response.status_code, 201, response.text)
             item = response.json()['Groups'][0]['Items'][0]
@@ -70,12 +71,43 @@ class WishlistUploadTests(unittest.IsolatedAsyncioTestCase):
                 json={'GroupId': row['Groups'][0]['Id'], 'Name': 'Edited', 'Photos': [item['Photos'][1], 'https://example.test/external.jpg']})
             self.assertEqual(edited.status_code, 200, edited.text)
             self.assertNotEqual(edited.json()['Groups'][0]['Items'][0]['Photos'][0], item['Photos'][0])
-            cleanup.assert_awaited_with([blobs[0]])
+            cleanup.assert_awaited_with({blobs[0]})
             async with self.sessions() as db:
                 photo = await db.scalar(select(WishlistPhoto).where(WishlistPhoto.item_id == UUID(item['Id']), WishlistPhoto.position == 0))
                 self.assertEqual(photo.blob_url, blobs[1])
             await self.client.delete('/wishlists/' + row['Id'] + '/items/' + item['Id'], headers=self.headers)
-            cleanup.assert_awaited_with([blobs[1]])
+            cleanup.assert_awaited_with({blobs[1]})
+
+    async def test_storage_failure_survives_edit_and_deletion_until_retry(self):
+        row = await self.create()
+        root = '/wishlists/' + row['Id']
+        group_id = row['Groups'][0]['Id']
+        removed, retained = ['https://test.private.blob.vercel-storage.com/wishlist/' + name
+                             for name in ('removed.webp', 'retained.webp')]
+        with patch.object(images, 'put', new=AsyncMock(side_effect=[removed, retained])):
+            created = await self.upload(row, files=[('files', ('a.png', image_bytes())), ('files', ('b.png', image_bytes()))])
+        item = created.json()['Groups'][0]['Items'][0]
+        with patch.object(images, 'delete_verified', new=AsyncMock(side_effect=HTTPException(503, 'storage'))):
+            edited = await self.client.patch(root + '/items/' + item['Id'], headers=self.headers,
+                json={'GroupId': group_id, 'Name': 'Edited', 'Photos': [item['Photos'][1]]})
+            self.assertEqual(edited.status_code, 200, edited.text)
+        async with self.sessions() as db:
+            pending = list(await db.scalars(select(WishlistBlobCleanup)))
+            self.assertEqual([job.url for job in pending], [removed])
+            self.assertIsNotNone(pending[0].last_attempt_at)
+            # A job for a retained photo must be dropped without deleting the object.
+            cleanup_service.enqueue(db, [retained])
+            await db.commit()
+            with patch.object(images, 'delete_verified', new=AsyncMock()) as retry:
+                self.assertEqual(await cleanup_service.process(db, limit=20), (2, 0))
+                retry.assert_awaited_once_with({removed})
+                self.assertEqual(await cleanup_service.process(db, limit=20), (0, 0))
+        with patch.object(images, 'delete_verified', new=AsyncMock(side_effect=HTTPException(503, 'storage'))):
+            deleted = await self.client.delete(root, headers=self.headers)
+            self.assertEqual(deleted.status_code, 200, deleted.text)
+        async with self.sessions() as db:
+            pending = list(await db.scalars(select(WishlistBlobCleanup)))
+            self.assertEqual([job.url for job in pending], [retained])
 
     async def test_validation_ownership_and_failed_upload_are_atomic(self):
         row = await self.create()
@@ -88,10 +120,12 @@ class WishlistUploadTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.upload(row, photos=['/api/wishlists/images/' + item['Id'] + '/0'])).status_code, 422)
             put.assert_not_awaited()
         blob = 'https://test.private.blob.vercel-storage.com/wishlist/new.webp'
-        with patch.object(images, 'put', new=AsyncMock(side_effect=[blob, HTTPException(503, 'storage')])), patch.object(images, 'cleanup', new=AsyncMock()) as cleanup:
+        with patch.object(images, 'put', new=AsyncMock(side_effect=[blob, HTTPException(503, 'storage')])), patch.object(images, 'delete_verified', new=AsyncMock(side_effect=HTTPException(503, 'storage'))) as cleanup:
             response = await self.upload(row, item=item, name='Should rollback', files=[('files', ('a.png', image_bytes())), ('files', ('b.png', image_bytes()))])
             self.assertEqual(response.status_code, 503)
-            cleanup.assert_awaited_with([blob])
+            cleanup.assert_awaited_with({blob})
+        async with self.sessions() as db:
+            self.assertEqual(list(await db.scalars(select(WishlistBlobCleanup.url))), [blob])
         current = (await self.client.get('/wishlists', headers=self.headers)).json()[0]['Groups'][0]['Items']
         self.assertEqual(len(current), 1)
         self.assertEqual(current[0]['Name'], 'Item')
@@ -99,7 +133,7 @@ class WishlistUploadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_archived_photos_and_cross_item_references(self):
         row = await self.create()
-        with patch.object(images, 'put', new=AsyncMock(return_value='https://test.private.blob.vercel-storage.com/wishlist/a.webp')), patch.object(images, 'cleanup', new=AsyncMock()), patch.object(images, 'read', new=AsyncMock(return_value=b'image')) as read:
+        with patch.object(images, 'put', new=AsyncMock(return_value='https://test.private.blob.vercel-storage.com/wishlist/a.webp')), patch.object(images, 'delete_verified', new=AsyncMock()), patch.object(images, 'read', new=AsyncMock(return_value=b'image')) as read:
             item = (await self.upload(row)).json()['Groups'][0]['Items'][0]
             second = await self.item(row, Name='Z Second')
             response = await self.client.patch('/wishlists/' + row['Id'] + '/items/' + second['Id'], headers=self.headers,

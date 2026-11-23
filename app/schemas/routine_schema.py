@@ -119,6 +119,10 @@ class TransactionInput(PascalModel):
         return self
 
 
+class TransactionUpdate(TransactionInput):
+    version: int = Field(strict=True, gt=0)
+
+
 class LegacyTransaction(PascalModel):
     id: str = Field(min_length=1, max_length=200, alias='id')
     description: str = Field(min_length=1, max_length=200, alias='description')

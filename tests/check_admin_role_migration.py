@@ -3,13 +3,14 @@ from pathlib import Path
 from uuid import uuid4
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from check_debt_installment_migration import engine,snapshot
+from synthetic_database import reset_synthetic_schema
 async def check():
     schema='admin_role_test_'+uuid4().hex
     async with engine.connect() as conn:
         db=(await conn.get_raw_connection()).driver_connection
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
-            baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8');keep=baseline.replace("set_config('finance_tracker.reset', 'on', true)","set_config('finance_tracker.reset', 'off', true)")
+            baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8');keep=baseline
             await db.execute(keep);await db.execute('DROP TABLE user_admin_audit; ALTER TABLE users DROP COLUMN admin_f')
             owner,other=uuid4(),uuid4()
             for user,email in [(owner,'elsadianri10@gmail.com'),(other,'synthetic@example.test')]:
@@ -23,7 +24,7 @@ async def check():
             await db.execute('UPDATE users SET admin_f=1 WHERE id=$1',other)
             all_tables=tables+['user_admin_audit'];expected=await snapshot(db,all_tables)
             await db.execute(sql);await db.execute(keep);assert expected==await snapshot(db,all_tables)
-            await db.execute(baseline);assert await db.fetchval('SELECT COUNT(*) FROM users')==0
+            await reset_synthetic_schema(db, schema);assert await db.fetchval('SELECT COUNT(*) FROM users')==0
             print('PASS: additive/repeated 031 preserves all old fields and finances; owner seeded, assigned admins preserved; reset only in synthetic schema.')
         finally:
             await db.execute('ROLLBACK');await db.execute('SET search_path TO public');await db.execute(f'DROP SCHEMA "{schema}" CASCADE')

@@ -60,6 +60,16 @@ class WishlistPhoto(Base):
     blob_url: Mapped[str | None] = mapped_column(String(2048))
 
 
+class WishlistBlobCleanup(Base):
+    __tablename__ = 'wishlist_blob_cleanup'
+    __table_args__ = (Index('ix_wishlist_cleanup_attempt', 'last_attempt_at', 'created_at'),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    url: Mapped[str] = mapped_column(String(2048))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class WishlistReservation(Base):
     __tablename__ = 'wishlist_reservations'
     item_id: Mapped[UUID] = mapped_column(ForeignKey('wishlist_items.id', ondelete='CASCADE'), primary_key=True)

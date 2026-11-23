@@ -34,7 +34,7 @@ class BlobAdapterTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {'BLOB_READ_WRITE_TOKEN': 'vercel_blob_rw_store_test'}), patch.object(images.httpx, 'AsyncClient', side_effect=client):
             self.assertEqual(await images.put(uuid4(), b'webp'), url)
             self.assertEqual(await images.read(url), b'webp')
-            await images.cleanup([url])
+            await images.delete_verified([url])
             self.assertEqual(len(requests), 3)
             for invalid in ('https://evil.example/wishlist/a', 'https://store.public.blob.vercel-storage.com/wishlist/a', url + '?redirect=1', 'http://' + url[8:]):
                 with self.assertRaises(HTTPException):

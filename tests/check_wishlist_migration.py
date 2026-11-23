@@ -6,6 +6,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from check_debt_installment_migration import engine, snapshot
+from synthetic_database import reset_synthetic_schema
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import User, Wishlist, WishlistGroup, WishlistItem, WishlistReservation
 from app.services import wishlist_service as service
@@ -22,11 +23,12 @@ async def check():
         await db.execute(f'CREATE SCHEMA "{schema}"; SET search_path TO "{schema}"')
         try:
             baseline = (ROOT/'database/000_init.sql').read_text(encoding='utf-8')
-            await db.execute(baseline.replace("set_config('finance_tracker.reset', 'on', true)", "set_config('finance_tracker.reset', 'off', true)"))
+            await db.execute(baseline)
             await db.execute('DROP TABLE ' + ','.join(NEW))
             users = [uuid4() for _ in range(3)]
             for index, user_id in enumerate(users):
                 await db.execute("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES($1,$2,'synthetic@example.test','Synthetic',NOW())", user_id, 'wishlist-synthetic-'+str(index))
+            await db.execute('INSERT INTO account_access(user_id,complimentary,version) VALUES($1,true,1)', users[0])
             await db.execute("INSERT INTO debts(id,user_id,kind,person_name,principal,transaction_date,interest_type,interest_rate) VALUES($1,$2,'DEBT','Synthetic',1000,'2026-10-01','NONE',0)", uuid4(), users[0])
             tables = [r['tablename'] for r in await db.fetch('SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ORDER BY tablename')]
             before = await snapshot(db, tables)
@@ -88,7 +90,7 @@ async def check():
             await db.execute('ALTER TABLE wishlist_photos DROP COLUMN blob_url')
             assert existing == await snapshot(db, all_tables)
             await db.execute(uploads)
-            await db.execute(baseline)
+            await reset_synthetic_schema(db, schema)
             for table in NEW:
                 assert await db.fetchval(f'SELECT COUNT(*) FROM {table}') == 0
             assert await db.fetchval('SELECT value FROM wishlist_test_sentinel') == 42

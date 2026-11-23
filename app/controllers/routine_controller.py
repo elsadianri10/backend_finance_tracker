@@ -2,10 +2,11 @@ from uuid import UUID
 from fastapi import Depends, Query, Response
 from app.config.db_config import get_db
 from app.controllers.auth_controller import get_current_user
-from app.schemas.routine_schema import RoutineInput, RoutineUpdate, PaymentInput, TransactionInput, ImportInput
+from app.schemas.routine_schema import RoutineInput, RoutineUpdate, PaymentInput, TransactionInput, TransactionUpdate, ImportInput
 from app.services import routine_service as service
 
-month_query = Query(pattern=r'^20\d{2}-(0[1-9]|1[0-2])$')
+month_pattern = r'^20\d{2}-(0[1-9]|1[0-2])$'
+month_query = Query(pattern=month_pattern)
 
 
 def no_store(response: Response):
@@ -47,9 +48,9 @@ async def remove(plan_id: UUID, user=Depends(get_current_user), db=Depends(get_d
     return Response(status_code=204, headers={'Cache-Control':'no-store'})
 
 
-async def transactions(response: Response, user=Depends(get_current_user), db=Depends(get_db)):
+async def transactions(response: Response, month: str | None = None, user=Depends(get_current_user), db=Depends(get_db)):
     no_store(response)
-    return await service.list_transactions(user.id, db)
+    return await service.list_transactions(user.id, db, month)
 
 
 async def transaction_create(payload: TransactionInput, response: Response, user=Depends(get_current_user), db=Depends(get_db)):
@@ -57,9 +58,9 @@ async def transaction_create(payload: TransactionInput, response: Response, user
     return await service.save_transaction(payload, user.id, db)
 
 
-async def transaction_update(item_id: UUID, payload: TransactionInput, response: Response, user=Depends(get_current_user), db=Depends(get_db)):
+async def transaction_update(item_id: UUID, payload: TransactionUpdate, response: Response, user=Depends(get_current_user), db=Depends(get_db)):
     no_store(response)
-    return await service.save_transaction(payload, user.id, db, item_id)
+    return await service.save_transaction(payload, user.id, db, item_id, expected_version=payload.version)
 
 
 async def transaction_remove(item_id: UUID, user=Depends(get_current_user), db=Depends(get_db)):
