@@ -458,7 +458,6 @@ CREATE TABLE IF NOT EXISTS ledger_transactions (
 	CONSTRAINT uq_ledger_request UNIQUE (user_id, request_id),
 	CONSTRAINT ck_ledger_kind CHECK (kind IN ('income','expense','transfer')),
 	CONSTRAINT ck_ledger_amount CHECK (amount > 0 AND amount <= 1000000000000),
-	CONSTRAINT ck_ledger_distinct_banks CHECK (source_bank_id IS NULL OR destination_bank_id IS NULL OR source_bank_id <> destination_bank_id),
 	FOREIGN KEY(user_id) REFERENCES users (id),
 	FOREIGN KEY(source_bank_id) REFERENCES bank_accounts (id) ON DELETE SET NULL,
 	FOREIGN KEY(destination_bank_id) REFERENCES bank_accounts (id) ON DELETE SET NULL,

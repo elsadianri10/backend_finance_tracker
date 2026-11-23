@@ -62,7 +62,6 @@ class LedgerTransaction(Base):
         UniqueConstraint('user_id', 'request_id', name='uq_ledger_request'),
         CheckConstraint("kind IN ('income','expense','transfer')", name='ck_ledger_kind'),
         CheckConstraint('amount > 0 AND amount <= 1000000000000', name='ck_ledger_amount'),
-        CheckConstraint('source_bank_id IS NULL OR destination_bank_id IS NULL OR source_bank_id <> destination_bank_id', name='ck_ledger_distinct_banks'),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))

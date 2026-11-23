@@ -149,3 +149,24 @@ class SavingsExpenseTests(unittest.IsolatedAsyncioTestCase):
         transfer = await self.plan(Kind='TRANSFER',DestinationBankId=self.banks[1])
         bad = await self.client.post('/routine/'+transfer+'/payments?month=2026-10',headers=self.headers,json=self.payment())
         self.assertEqual(bad.status_code,422,bad.text)
+
+    async def test_bill_payment_date_controls_savings_and_failure_is_atomic(self):
+        bill, part = await self.bill()
+        path = '/billing/transactions/' + bill + '/installments/' + part + '/pay'
+        body = {'SourceBankId': self.banks[0], 'SavingId': self.saving, 'PaymentDate': '2026-09-30'}
+        failed = await self.client.post(path, headers=self.headers, json=body)
+        self.assertEqual(failed.status_code, 422, failed.text)
+        self.assertIsNone((await self.get('/billing/transactions/' + bill))['Installments'][0]['PaidAt'])
+        self.assertEqual(await self.get('/transactions'), [])
+        self.assertEqual((await self.get('/savings/' + self.saving))['Balance'], 3000)
+        chosen = '2026-10-08'
+        result = await self.client.post(path, headers=self.headers, json=body | {'PaymentDate': chosen})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertTrue(result.json()['SavingUpdated'])
+        saving = await self.get('/savings/' + self.saving)
+        self.assertEqual(saving['Balance'], 2500)
+        self.assertEqual(saving['Movements'][0]['MovementDate'], chosen)
+        ledger = await self.get('/transactions')
+        self.assertEqual(len(ledger), 1)
+        self.assertEqual(ledger[0]['TransactionDate'], chosen)
+        self.assertEqual(ledger[0]['SavingMovementId'], saving['Movements'][0]['Id'])

@@ -165,7 +165,7 @@ async def detail(transaction_id, user_id, db):
     return result
 
 
-async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sync=True, bank_id=None, notes='', saving_id=None):
+async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sync=True, bank_id=None, notes='', saving_id=None, payment_date: date | None = None):
     await require_pro(user_id, db)
     from app.services.payment_sync_service import lock_owner, billing_ledger
     await lock_owner(user_id, db)
@@ -174,7 +174,12 @@ async def mark_paid(transaction_id, installment_id, user_id, db, commit=True, sy
     next_bill = await db.scalar(select(BillingInstallment).where(BillingInstallment.transaction_id == item.id, BillingInstallment.paid_at.is_(None)).order_by(BillingInstallment.sequence).limit(1))
     if next_bill is None or next_bill.id != installment_id:
         raise HTTPException(409, "Only the next unpaid installment can be paid")
-    next_bill.paid_at = datetime.now(timezone.utc)
+    if payment_date is not None:
+        if not date(2000, 1, 1) <= payment_date <= local_today():
+            raise HTTPException(422, detail=[{'loc': ['body', 'PaymentDate'], 'msg': 'Tanggal pembayaran harus sejak 01-01-2000 hingga hari ini (WIB)', 'type': 'value_error'}])
+        next_bill.paid_at = datetime.combine(payment_date, datetime.min.time(), tzinfo=timezone(timedelta(hours=7))).astimezone(timezone.utc)
+    else:
+        next_bill.paid_at = datetime.now(timezone.utc)
     await db.flush()
     if saving_id and not sync:
         raise HTTPException(422, "Savings harus dicatat bersama Transaksi")

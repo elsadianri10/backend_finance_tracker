@@ -6,6 +6,7 @@ import test_billing as fixture
 
 
 class SavingsSyncTests(unittest.IsolatedAsyncioTestCase):
+    pro_access = True
     async def asyncSetUp(self):
         await fixture.BillingTests.asyncSetUp(self)
         # The undo/repay scenario takes place on the same synthetic day.
@@ -52,7 +53,7 @@ class SavingsSyncTests(unittest.IsolatedAsyncioTestCase):
             ('transfer','savings',banks[0],banks[1]))
         self.assertEqual(rows[0]['TransactionDate'],'2026-10-09')
         self.assertEqual((await self.client.post(path,headers=self.headers,json=body|{'SourceBankId':banks[1]})).status_code,409)
-        for source in (None, banks[1]):
+        for source in (None,):
             failed = await self.client.post(path,headers=self.headers,json=body|{'RequestId':str(uuid4()),'SourceBankId':source})
             self.assertEqual(failed.status_code,422,failed.text)
         missing_owner = await self.client.post(path,headers=self.auth_headers(self.other_id),json=body)
@@ -131,3 +132,47 @@ class SavingsSyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failed.status_code,422,failed.text)
         self.assertEqual((await self.saving(saving))['Balance'],100)
         self.assertEqual(len((await self.client.get('/transactions',headers=self.headers)).json()),2)
+
+    async def test_same_bank_allocations_and_transfers_across_entry_points(self):
+        banks, saving = await self.setup_saving()
+        bank = banks[1]
+        transfer = self.payload(Kind='transfer', Category='savings', Description='Internal allocation',
+                                SourceBankId=bank, DestinationBankId=bank)
+        for missing in ('SourceBankId', 'DestinationBankId'):
+            bad = await self.client.post('/transactions', headers=self.headers, json=transfer | {missing: None})
+            self.assertEqual(bad.status_code, 422, bad.text)
+        foreign = await self.client.post('/transactions', headers=self.auth_headers(self.other_id), json=transfer)
+        self.assertEqual(foreign.status_code, 404, foreign.text)
+        plain = await self.client.post('/transactions', headers=self.headers, json=transfer)
+        self.assertEqual(plain.status_code, 201, plain.text)
+        edited = await self.client.patch('/transactions/' + plain.json()['Id'], headers=self.headers, json=transfer | {'Amount': 300})
+        self.assertEqual(edited.status_code, 200, edited.text)
+        linked = transfer | {'RequestId': str(uuid4()), 'SavingId': saving, 'Amount': 500}
+        allocated = await self.client.post('/transactions', headers=self.headers, json=linked)
+        self.assertEqual(allocated.status_code, 201, allocated.text)
+        self.assertEqual((await self.client.post('/transactions', headers=self.headers, json=linked)).json(), allocated.json())
+        movement = {'RequestId': str(uuid4()), 'Direction': 'ADD', 'Amount': 250, 'MovementDate': '2026-10-09',
+                    'RecordTransaction': True, 'SourceBankId': bank}
+        path = '/savings/' + saving + '/movements'
+        origin = await self.client.post(path, headers=self.headers, json=movement)
+        self.assertEqual(origin.status_code, 201, origin.text)
+        self.assertEqual((await self.client.post(path, headers=self.headers, json=movement)).status_code, 201)
+        plan = await self.client.post('/routine?month=2026-10', headers=self.headers, json={
+            'Kind': 'TRANSFER', 'Recipient': 'Saya', 'Name': 'Internal recurring allocation', 'Amount': 300,
+            'FirstDueDate': '2026-10-09', 'DestinationBankId': bank, 'SavingId': saving})
+        self.assertEqual(plan.status_code, 201, plan.text)
+        payment = {'RequestId': str(uuid4()), 'Sequence': 1, 'Amount': 300, 'PaymentDate': '2026-10-09', 'SourceBankId': bank}
+        path = '/routine/' + plan.json()['Id'] + '/payments?month=2026-10'
+        paid = await self.client.post(path, headers=self.headers, json=payment)
+        self.assertEqual(paid.status_code, 201, paid.text)
+        self.assertEqual((await self.client.post(path, headers=self.headers, json=payment)).status_code, 201)
+        result = await self.saving(saving)
+        self.assertEqual(result['Balance'], 2050)
+        self.assertEqual(len(result['Movements']), 3)
+        rows = (await self.client.get('/transactions', headers=self.headers)).json()
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(row['Kind'] == 'transfer' and row['SourceBankId'] == row['DestinationBankId'] == bank for row in rows))
+        summary = await self.client.get('/summary?month=2026-10', headers=self.headers)
+        self.assertEqual(summary.status_code, 200, summary.text)
+        totals = summary.json()['MonthTotals']
+        self.assertEqual((totals['Earnings'], totals['Expenses'], totals['NetCashflow']), (0, 0, 0))

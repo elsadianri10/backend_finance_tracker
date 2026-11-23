@@ -19,7 +19,7 @@ Migration 016 menambahkan empat tabel relasional dengan nominal rupiah bulat BIG
 
 `DELETE /routine/{id}/payments/{paymentId}?month=...` membatalkan pencatatan pembayaran aktif terakhir dan ledger terkait secara atomik. Riwayat void dipertahankan; siklus yang sama dapat dicatat lagi dengan RequestId baru. Pembatalan pencatatan tidak melakukan transfer uang.
 
-TRANSFER membutuhkan dua rekening berbeda milik pengguna. Pilihan rekening dan label tersamarkan berasal dari My Bank Account. Tidak menghitung transfer sebagai pemasukan atau pengeluaran, tidak mengubah saldo riil rekening, dan tidak membuat SavingMovement.
+TRANSFER membutuhkan rekening sumber dan tujuan milik pengguna; keduanya boleh sama untuk alokasi internal dalam satu rekening. Pilihan rekening dan label tersamarkan berasal dari My Bank Account. Tidak menghitung transfer sebagai pemasukan atau pengeluaran, tidak mengubah saldo riil rekening, dan tidak membuat SavingMovement.
 
 Rencana dapat menunjuk BillingTransaction atau Debt milik pengguna, satu sumber per rencana. Hutang tertaut hanya untuk CONTRIBUTION dan hanya Debt berjenis DEBT. Satu sumber hanya boleh memiliki satu rencana ACTIVE. Pembayaran tertaut memperbarui Tagihan/Hutang, progres rencana, dan satu ledger secara atomik. Untuk Tagihan, pilih installment berikutnya yang belum dibayar; nominal harus persis sama. Rincian lama yang sudah dibayar dan belum terhubung ke rutin dapat diasosiasikan tanpa menggandakan ledger.
 
