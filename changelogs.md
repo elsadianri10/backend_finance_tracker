@@ -6,10 +6,14 @@
 
 ---
 
-
 # Developer Changelogs:
 
 ## [v.1.0.0-Unrelease]
+## 23 November 2026 — Link berbagi Split Bill
+
+- Link publik hanya-baca per grup: rincian pengeluaran, peserta, pembagian dan saran transfer tanpa login.
+- Pemilik dapat membuat, mengganti, menyalin, atau mencabut link; link lama tidak berlaku setelah diganti/dicabut atau grup dihapus.
+- Hash token disimpan di tabel relasional; diperlukan migrasi 032.
 
 ### 2026-11-14
 

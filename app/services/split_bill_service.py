@@ -238,3 +238,45 @@ async def report(group_id, user_id, db):
     from app.services.access_service import require_pro
     await require_pro(user_id, db)
     return await response(item, db)
+
+
+async def share_status(group_id, user_id, db):
+    from app.models.split_bill_model import SplitBillLink
+    await owned(group_id, user_id, db)
+    return {'Active': await db.get(SplitBillLink, group_id) is not None}
+
+
+async def create_share(group_id, user_id, db):
+    import hashlib
+    import secrets
+    from app.models.split_bill_model import SplitBillLink
+    await owned(group_id, user_id, db, True)
+    token = secrets.token_urlsafe(32)
+    row = await db.get(SplitBillLink, group_id)
+    if row is None:
+        row = SplitBillLink(group_id=group_id)
+        db.add(row)
+    row.token_hash = hashlib.sha256(token.encode()).hexdigest()
+    await db.commit()
+    return {'Token': token, 'Active': True}
+
+
+async def revoke_share(group_id, user_id, db):
+    from app.models.split_bill_model import SplitBillLink
+    await owned(group_id, user_id, db, True)
+    await db.execute(delete(SplitBillLink).where(SplitBillLink.group_id == group_id))
+    await db.commit()
+    return {'Active': False}
+
+
+async def shared(token, db):
+    import hashlib
+    import re
+    from app.models.split_bill_model import SplitBillLink
+    if not re.fullmatch(r'[A-Za-z0-9_-]{43}', token):
+        raise HTTPException(404, 'Link tidak tersedia')
+    group = await db.scalar(select(SplitBillGroup).join(SplitBillLink, SplitBillLink.group_id == SplitBillGroup.id)
+        .where(SplitBillLink.token_hash == hashlib.sha256(token.encode()).hexdigest()).with_for_update(read=True))
+    if group is None:
+        raise HTTPException(404, 'Link tidak tersedia')
+    return await response(group, db)

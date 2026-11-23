@@ -39,3 +39,16 @@ async def update(group_id: UUID, payload: GroupUpdate, response: Response, user:
 async def delete(group_id: UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await service.delete_group(group_id, user.id, db)
     return Response(status_code=204, headers={'Cache-Control': 'no-store'})
+
+
+async def share(group_id, action, response, user, db):
+    response.headers['Cache-Control'] = 'no-store'
+    operation = {'GET': service.share_status, 'POST': service.create_share, 'DELETE': service.revoke_share}[action]
+    return await operation(group_id, user.id, db)
+
+
+async def shared(token, response, db):
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['X-Robots-Tag'] = 'noindex, nofollow'
+    return await service.shared(token, db)

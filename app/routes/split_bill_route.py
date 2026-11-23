@@ -30,6 +30,11 @@ async def create(
     return await controller.create(payload=payload, response=response, user=user, db=db)
 
 
+@router.get('/shared/{token}')
+async def shared(token: str, response: Response, db: AsyncSession = Depends(get_db)):
+    return await controller.shared(token, response, db)
+
+
 @router.get('/{group_id}')
 async def detail(
     group_id: UUID,
@@ -67,3 +72,18 @@ async def delete(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.delete(group_id=group_id, user=user, db=db)
+
+
+@router.get('/{group_id}/share')
+async def share_status(group_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.share(group_id, 'GET', response, user, db)
+
+
+@router.post('/{group_id}/share')
+async def create_share(group_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.share(group_id, 'POST', response, user, db)
+
+
+@router.delete('/{group_id}/share')
+async def revoke_share(group_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await controller.share(group_id, 'DELETE', response, user, db)
