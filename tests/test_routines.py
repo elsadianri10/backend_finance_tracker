@@ -107,6 +107,27 @@ class RoutineTests(unittest.IsolatedAsyncioTestCase):
         for value in (True,1.5,-1):
             self.assertEqual((await self.client.post('/transactions',headers=self.headers,json=manual|{'Amount':value})).status_code,422)
 
+    async def test_fund_transfer_round_trips_without_affecting_cashflow(self):
+        source, destination = await self.banks()
+        payload = {
+            'Kind': 'transfer', 'Category': 'fund_transfer', 'Description': 'Pindah Dana',
+            'Amount': 1000, 'TransactionDate': '2026-10-09',
+            'SourceBankId': source, 'DestinationBankId': destination,
+        }
+        created = await self.client.post('/transactions', headers=self.headers, json=payload)
+        self.assertEqual(created.status_code, 201, created.text)
+        row = created.json()
+        self.assertEqual(row['Category'], 'fund_transfer')
+        edited = await self.client.patch('/transactions/' + row['Id'], headers=self.headers,
+                                         json=payload | {'Amount': 1500})
+        self.assertEqual(edited.status_code, 200, edited.text)
+        self.assertEqual(edited.json()['Category'], 'fund_transfer')
+        totals = (await self.client.get('/summary?month=2026-10', headers=self.headers)).json()['MonthTotals']
+        self.assertEqual((totals['Earnings'], totals['Expenses'], totals['NetCashflow']), (0, 0, 0))
+        wrong_kind = await self.client.post('/transactions', headers=self.headers,
+                                            json=payload | {'Kind': 'expense', 'DestinationBankId': None})
+        self.assertEqual(wrong_kind.status_code, 422)
+
     async def test_import_once_no_resurrection(self):
         old={'id':'old-browser-id','type':'expense','description':'Internet','category':'bills','amount':277500,'date':'2026-10-09'}
         payload={'Transactions':[old]}

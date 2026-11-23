@@ -82,7 +82,7 @@ class TransactionInput(PascalModel):
     routine_sequence: int | None = Field(default=None, strict=True, gt=0)
     kind: Literal['income','expense','transfer']
     description: str = Field(min_length=1, max_length=200)
-    category: Category = 'other'
+    category: Category | Literal['fund_transfer'] = 'other'
     amount: int = Field(strict=True, gt=0, le=1000000000000)
     transaction_date: date = Field(ge=date(2000,1,1), le=date(2099,12,31))
     source_bank_id: UUID | None = None
@@ -106,6 +106,11 @@ class TransactionInput(PascalModel):
             raise ValueError('Pilih pembayaran rutin berikutnya')
         if self.kind == 'transfer' and (not self.source_bank_id or not self.destination_bank_id):
             raise ValueError('Transfer memerlukan rekening sumber dan tujuan milik sendiri')
+        if self.category == 'fund_transfer':
+            if self.kind != 'transfer':
+                raise ValueError('Pindah Dana hanya untuk Transfer Antar Rekening')
+            if self.saving_id or self.routine_plan_id:
+                raise ValueError('Pilih Alokasi Tabungan untuk transfer yang terhubung ke Savings atau Pengeluaran Rutin')
         if self.category == 'cash_withdrawal':
             if self.kind != 'income' or self.destination_bank_id:
                 raise ValueError('Tarik Tunai menggunakan rekening sumber dan tujuan tunai')
