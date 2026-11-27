@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.config.db_config import engine
 from app.routes import (
-    admin_auth_router, admin_role_router, deletion_router, subscription_router, access_router, stock_router, wishlist_router,
+    admin_auth_router, admin_role_router, deletion_router, subscription_router, access_router, stock_router, wishlist_router, budget_router, patungan_router,
     transaction_export_router, passkey_router, auth_router, version_router, billing_router, debt_router, bank_account_router,
     savings_router, split_bill_router, routine_router, summary_router,
 )
@@ -55,6 +55,8 @@ app.include_router(deletion_router)
 app.include_router(transaction_export_router)
 app.include_router(wishlist_router)
 app.include_router(stock_router)
+app.include_router(budget_router)
+app.include_router(patungan_router)
 app.include_router(access_router)
 app.include_router(subscription_router)
 app.include_router(passkey_router)

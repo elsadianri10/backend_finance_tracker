@@ -4,6 +4,8 @@ from .deletion_route import router as deletion_router
 from .subscription_route import router as subscription_router
 from .access_route import router as access_router
 from .stock_route import router as stock_router
+from .budget_route import router as budget_router
+from .patungan_route import router as patungan_router
 from .transaction_export_route import router as transaction_export_router
 from .wishlist_route import router as wishlist_router
 from .passkey_route import router as passkey_router
@@ -24,6 +26,8 @@ __all__ = [
     "subscription_router",
     "access_router",
     'stock_router',
+    'budget_router',
+    'patungan_router',
     'wishlist_router',
     "transaction_export_router",
     "passkey_router",

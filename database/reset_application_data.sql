@@ -14,6 +14,9 @@ BEGIN
     PERFORM set_config('finance_tracker.confirm_reset', '', false);
     EXECUTE format($reset$
     TRUNCATE TABLE
+        %1$I.shared_subscription_receipts, %1$I.shared_subscription_waivers,
+        %1$I.shared_subscription_members, %1$I.shared_subscriptions,
+        %1$I.budget_items, %1$I.budget_categories, %1$I.budgets,
         %1$I.split_bill_links, %1$I.user_admin_audit, %1$I.account_deletion_blobs, %1$I.account_deletions,
         %1$I.subscription_payments, %1$I.subscription_orders, %1$I.access_audit, %1$I.account_access,
         %1$I.stock_events, %1$I.stock_products, %1$I.stock_needs, %1$I.wishlist_reservations,
