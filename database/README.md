@@ -1,6 +1,6 @@
 # Script database PostgreSQL
 
-- `000_init.sql`: baseline PostgreSQL sampai 036. Membuat struktur dan seed yang belum tersedia serta mempertahankan data yang ada. Gunakan migrasi bernomor untuk database lama.
+- `000_init.sql`: baseline PostgreSQL sampai 037. Membuat struktur dan seed yang belum tersedia serta mempertahankan data yang ada. Gunakan migrasi bernomor untuk database lama.
 - `001_create_billing_accounts.sql`: platform bank/paylater, relasi tipe yang didukung, akun milik pengguna, dan seed BCA, BRI, GoPay Later, ShopeePay Later.
 - `002_create_billing_transactions.sql`: transaksi per akun dan jadwal cicilan, nominal NUMERIC, serta waktu pembayaran. Telah dijalankan pada database lokal 7 Oktober 2026. Database lain perlu menjalankan script ini sekali.
 - `003_merge_billing_platform_types.sql`: memindahkan tipe ke kolom nullable `billing_platforms.platform_type`, mempertahankan batasan tipe lama, mengganti foreign key akun, dan menghapus tabel relasi lama. Telah dijalankan pada database lokal 7 Oktober 2026. NULL mengizinkan kedua tipe akun.
@@ -23,7 +23,7 @@
 - `025_stock_product_replenishment.sql`: dua kolom override jeda/penundaan beli ulang per produk, default lama tetap aktif. Jalankan setelah 024. Uji data terisi/upgrade berulang/baseline hanya di schema sintetis: `tests/check_stock_migration.py`.
 - `024_stock_needs.sql`: tiga tabel stok kebutuhan/produk/riwayat bertipe. Additive, tanpa perubahan data keuangan/Wishlist; jalankan setelah 023. Uji upgrade berulang, data terisi, pembelian bersamaan dan baseline/reset hanya dalam schema sintetis: `tests/check_stock_migration.py`.
 - Perubahan berikutnya memakai `037_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
-- Database baru memakai 000 yang sudah mencakup 001–036. Database lama memakai migrasi yang belum diterapkan sesuai urutan. Catat versi yang sudah diterapkan. Migrasi dijalankan terpisah sebelum aplikasi mulai.
+- Database baru memakai 000 yang sudah mencakup 001–037. Database lama memakai migrasi yang belum diterapkan sesuai urutan. Catat versi yang sudah diterapkan. Migrasi dijalankan terpisah sebelum aplikasi mulai.
 - 000 adalah snapshot baseline terkini; perubahan 000 tidak dipakai untuk upgrade database yang sudah berjalan. Jangan ubah migration historis 001 dan seterusnya. Tambahkan file baru dengan `ALTER TABLE` atau `CREATE TABLE` dan transaksi `BEGIN` / `COMMIT`.
 - Buat database terlebih dahulu; script tidak membuat database atau user PostgreSQL.
 
@@ -104,3 +104,5 @@ Jika Neon sudah sampai 025, jalankan seluruh [gabungan migrasi 026–034](upgrad
 [Migrasi 035](035_budgeting.sql) menambah tabel Budgeting, kategori, dan item. Untuk deployment yang sudah sampai 034, jalankan 035 lalu preflight sebelum rilis Budgeting. Migrasi ini mempertahankan transaksi keuangan yang sudah ada.
 
 [Migrasi 036](036_shared_subscriptions.sql) menambah tabel Patungan Langganan dan tautan unik ke transaksi uang masuk yang sudah ada. Terapkan setelah 035 dan jalankan preflight sebelum deployment.
+
+[Migrasi 037](037_close_shared_subscriptions.sql) menambah tanggal tutup Patungan Langganan. Grup lama tetap aktif. Terapkan setelah 036 dan jalankan preflight sebelum deployment.

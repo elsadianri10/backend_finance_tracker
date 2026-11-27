@@ -6,7 +6,7 @@ from app.config.db_config import get_db
 from app.controllers.auth_controller import get_current_user
 from app.controllers.patungan_controller import execute
 from app.controllers.routine_controller import month_pattern
-from app.schemas.patungan_schema import MemberInput, MemberUpdate, ReceiptInput, SubscriptionInput, WaiverInput
+from app.schemas.patungan_schema import MemberInput, MemberUpdate, ReceiptInput, SubscriptionClose, SubscriptionInput, WaiverInput
 from app.services import patungan_service as service
 
 router = APIRouter(prefix='/patungan', tags=['Patungan Langganan'])
@@ -30,6 +30,16 @@ async def transactions(response: Response, month: str = Query(pattern=month_patt
 @router.get('/{group_id}')
 async def detail(group_id: UUID, response: Response, year: int = Query(ge=2000, le=2099), user=Depends(get_current_user), db=Depends(get_db)):
     return await execute(service.detail, response, user, db, group_id, year)
+
+
+@router.patch('/{group_id}/close')
+async def close(group_id: UUID, payload: SubscriptionClose, response: Response, user=Depends(get_current_user), db=Depends(get_db)):
+    return await execute(service.close_group, response, user, db, group_id, payload)
+
+
+@router.delete('/{group_id}', status_code=204)
+async def delete(group_id: UUID, response: Response, user=Depends(get_current_user), db=Depends(get_db)):
+    await execute(service.delete_group, response, user, db, group_id)
 
 
 @router.post('/{group_id}/members', status_code=201)

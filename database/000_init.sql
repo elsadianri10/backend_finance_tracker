@@ -1,4 +1,4 @@
--- PostgreSQL consolidated baseline through migration 036.
+-- PostgreSQL consolidated baseline through migration 037.
 -- Initialize a new schema or re-run against a schema already at that version.
 -- For existing schemas with pending migrations, apply those migrations first.
 -- Existing application rows and wallet providers are preserved.
@@ -758,6 +758,7 @@ CREATE TABLE IF NOT EXISTS shared_subscriptions (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(150) NOT NULL,
     monthly_amount BIGINT NOT NULL,
+    closed_on DATE,
     CONSTRAINT ck_shared_subscription_amount CHECK (monthly_amount BETWEEN 1 AND 1000000000)
 );
 CREATE INDEX IF NOT EXISTS ix_shared_subscriptions_owner ON shared_subscriptions (user_id);
@@ -804,7 +805,7 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 036.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 037.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('wishlist_photos', 'blob_url'),
@@ -846,13 +847,14 @@ BEGIN
         ('billing_transactions', 'recurring_billing_day'),
         ('billing_transactions', 'recurring_due_day'),
         ('debt_installments', 'amount'),
-        ('billing_installments', 'charged_on')
+        ('billing_installments', 'charged_on'),
+        ('shared_subscriptions', 'closed_on')
     ) AS required(table_name, column_name)
     LOOP
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 036.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 037.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;

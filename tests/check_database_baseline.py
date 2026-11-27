@@ -53,6 +53,14 @@ async def check():
             await db.execute('INSERT INTO baseline_sentinel VALUES (42)')
             user, account, transaction, bill = [uuid4() for _ in range(4)]
             await db.execute("INSERT INTO users(id, google_sub, email, name, last_login_at) VALUES($1, 'synthetic', 'synthetic@example.test', 'Synthetic', NOW())", user)
+            group = uuid4()
+            await db.execute('ALTER TABLE shared_subscriptions DROP COLUMN closed_on')
+            await db.execute("INSERT INTO shared_subscriptions(id, user_id, name, monthly_amount) VALUES($1,$2,'Synthetic',26000)", group, user)
+            close_sql = Path('database/037_close_shared_subscriptions.sql').read_text(encoding='utf-8')
+            for _ in range(2):
+                await db.execute(close_sql)
+            shared_group = await db.fetchrow('SELECT monthly_amount, closed_on FROM shared_subscriptions WHERE id=$1', group)
+            assert shared_group is not None and tuple(shared_group) == (26000, None)
             await db.execute("INSERT INTO user_passkeys(id,user_id,credential_id,public_key,name,rp_id,sign_count,backed_up) VALUES($1,$2,$3,$4,'Synthetic','localhost',0,false)", uuid4(), user, b'credential', b'public-key')
             await db.execute("INSERT INTO passkey_challenges(id,user_id,purpose,challenge,auth_version,expires_at,attempts) VALUES($1,$2,'LOGIN',$3,0,NOW()+INTERVAL '5 minutes',0)", uuid4(), user, b'challenge')
             await db.execute("INSERT INTO passkey_recovery_codes(id,user_id,code_hash) VALUES($1,$2,$3)", uuid4(), user, 'a' * 64)
