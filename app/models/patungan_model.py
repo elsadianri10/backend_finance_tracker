@@ -18,6 +18,7 @@ class SharedSubscription(Base):
     user_id: Mapped[UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'))
     name: Mapped[str] = mapped_column(String(150))
     monthly_amount: Mapped[int] = mapped_column(BigInteger)
+    closed_on: Mapped[date | None]
 
 
 class SubscriptionMember(Base):

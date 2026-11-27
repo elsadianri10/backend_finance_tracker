@@ -11,6 +11,7 @@
 ## [v.1.0.0-Unrelease]
 ## 27 November 2026
 ### Patungan Langganan
+- Tutup patungan dengan tanggal akhir iuran atau hapus catatan patungan sambil mempertahankan transaksi tertaut. Terapkan migrasi 037 untuk menyimpan tanggal tutup.
 - Akses Patungan Langganan hanya tersedia selama akun memiliki akses Pro.
 - Simpan riwayat keanggotaan, bulan bebas iuran, dan penerimaan patungan dalam tabel relasional. Migrasi 036 mempertahankan ledger yang sudah ada.
 - Checklist menghitung iuran lunas/sebagian dan saldo berikutnya. Setiap transaksi uang masuk dapat ditautkan satu kali, dengan nominal dan tanggal dari ledger.

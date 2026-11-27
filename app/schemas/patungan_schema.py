@@ -15,6 +15,10 @@ class SubscriptionInput(PascalModel):
     monthly_amount: int = Field(strict=True, ge=1, le=1_000_000_000)
 
 
+class SubscriptionClose(PascalModel):
+    closed_on: SupportedDate
+
+
 class MemberInput(PascalModel):
     name: Name
     joined_on: SupportedDate

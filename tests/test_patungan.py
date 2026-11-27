@@ -30,6 +30,8 @@ class PatunganTests(unittest.IsolatedAsyncioTestCase):
             ('GET', group + '?year=2026', None),
             ('GET', '/patungan/transactions?month=2026-11', None),
             ('POST', '/patungan', {'Name': 'Synth', 'MonthlyAmount': 26000}),
+            ('PATCH', group + '/close', {'ClosedOn': '2026-11-26'}),
+            ('DELETE', group, None),
             ('POST', group + '/members', member_input),
             ('PATCH', member, member_input | {'Version': 1}),
             ('PUT', member + '/waiver', {'Month': '2026-11-01', 'Waived': True}),
@@ -124,3 +126,51 @@ class PatunganTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((current['Months'][11]['Paid'], current['Credit']), (26000, 52000))
             following = (await self.client.get(group + '?year=2027', headers=self.headers)).json()['Members'][1]
             self.assertEqual([part['Paid'] for part in following['Months'][:3]], [26000, 26000, 0])
+
+    async def test_close_stops_future_iuran_and_delete_preserves_ledger(self):
+        group = await self.group()
+        member = await self.member(group, 'Anggota sintetis', '2026-09-01')
+        other = self.auth_headers(self.other_id)
+        created = await self.client.post('/transactions', headers=self.headers, json={
+            'Kind': 'income', 'Category': 'other', 'Amount': 50000,
+            'Description': 'Transfer sintetis', 'TransactionDate': '2026-11-05',
+        })
+        self.assertEqual(created.status_code, 201, created.text)
+        transaction_id = created.json()['Id']
+        payment = {'RequestId': str(uuid4()), 'TransactionId': transaction_id, 'StartMonth': '2026-11-01'}
+        close_date = {'ClosedOn': '2026-11-26'}
+        waiver = {'Month': '2026-10-01', 'Waived': True}
+
+        with patch('app.services.patungan_service.local_today', return_value=date(2026, 11, 27)):
+            self.assertEqual((await self.client.put(member + '/waiver', headers=self.headers, json=waiver)).status_code, 204)
+            self.assertEqual((await self.client.post(member + '/payments', headers=self.headers, json=payment)).status_code, 204)
+            self.assertEqual((await self.client.patch(group + '/close', headers=other, json=close_date)).status_code, 404)
+            self.assertEqual((await self.client.patch(group + '/close', headers=self.headers,
+                json={'ClosedOn': '2026-11-28'})).status_code, 422)
+            for _ in range(2):
+                closed = await self.client.patch(group + '/close', headers=self.headers, json=close_date)
+                self.assertEqual(closed.status_code, 200, closed.text)
+                self.assertEqual(closed.json()['ClosedOn'], close_date['ClosedOn'])
+
+            detail = (await self.client.get(group + '?year=2026', headers=self.headers)).json()
+            row = detail['Members'][0]
+            self.assertEqual([month['Status'] for month in row['Months'][8:]], ['OVERDUE', 'WAIVED', 'PAID', 'CLOSED'])
+            self.assertEqual((row['Months'][11]['Amount'], row['Months'][11]['DueOn']), (0, None))
+            self.assertEqual((row['Credit'], row['Outstanding'], row['Payments'][0]['TransactionId']),
+                             (24000, 26000, transaction_id))
+            self.assertEqual((await self.client.post(group + '/members', headers=self.headers,
+                json={'Name': 'Anggota baru', 'JoinedOn': '2026-11-27'})).status_code, 409)
+            self.assertEqual((await self.client.put(member + '/waiver', headers=self.headers,
+                json=waiver | {'Month': '2026-12-01'})).status_code, 422)
+            manual = {'RequestId': str(uuid4()), 'Amount': 26000, 'PaidOn': '2026-11-27'}
+            self.assertEqual((await self.client.post(member + '/payments', headers=self.headers,
+                json=manual | {'StartMonth': '2026-12-01'})).status_code, 422)
+            self.assertEqual((await self.client.post(member + '/payments', headers=self.headers,
+                json=manual)).status_code, 204)
+            self.assertEqual((await self.client.delete(group, headers=other)).status_code, 404)
+            self.assertEqual((await self.client.delete(group, headers=self.headers)).status_code, 204)
+
+        self.assertEqual((await self.client.get(group + '?year=2026', headers=self.headers)).status_code, 404)
+        ledger = (await self.client.get('/transactions?month=2026-11', headers=self.headers)).json()
+        self.assertEqual([(row['Id'], row['Amount'], row['SubscriptionReceiptId']) for row in ledger],
+                         [(transaction_id, 50000, None)])
