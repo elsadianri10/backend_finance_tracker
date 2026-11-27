@@ -28,8 +28,9 @@ async def check(apply=False):
                 await connection.execute(text(f'SET search_path TO "{schema}"'))
                 baseline=(ROOT/'database/000_init.sql').read_text(encoding='utf-8')
                 await raw.execute(baseline.replace('BEGIN;', '').replace('COMMIT;', ''))
-                # Drop the post-016 stock reference while preserving all other fixture tables.
+                # Remove newer references while constructing the pre-016 fixture.
                 await raw.execute('ALTER TABLE stock_events DROP CONSTRAINT stock_events_transaction_id_fkey')
+                await raw.execute('ALTER TABLE shared_subscription_receipts DROP CONSTRAINT shared_subscription_receipts_transaction_id_fkey')
                 await raw.execute('DROP TABLE transaction_imports, ledger_transactions, routine_payments, routine_plans')
                 owner=uuid4()
                 await connection.execute(text("INSERT INTO users(id,google_sub,email,name,last_login_at) VALUES(:id,'synthetic','synthetic@example.test','Synthetic',NOW())"),{'id':owner})

@@ -9,6 +9,16 @@
 # Developer Changelogs:
 
 ## [v.1.0.0-Unrelease]
+## 27 November 2026
+### Patungan Langganan
+- Akses Patungan Langganan hanya tersedia selama akun memiliki akses Pro.
+- Simpan riwayat keanggotaan, bulan bebas iuran, dan penerimaan patungan dalam tabel relasional. Migrasi 036 mempertahankan ledger yang sudah ada.
+- Checklist menghitung iuran lunas/sebagian dan saldo berikutnya. Setiap transaksi uang masuk dapat ditautkan satu kali, dengan nominal dan tanggal dari ledger.
+
+### Budgeting
+- Tambah rencana budget pribadi khusus Pro, kategori bebas, serta item dengan penjual dan link opsional.
+- Total rencana dihitung dari harga satuan dan jumlah. Migrasi 035 menambah tiga tabel relasional.
+
 ## 23 November 2026
 ### Tindak lanjut audit backend 6–7
 - Ringkasan menghitung saldo Savings di database dan membaca rincian Tagihan yang belum lunas beserta nomor cicilan terakhir untuk proyeksi langganan.

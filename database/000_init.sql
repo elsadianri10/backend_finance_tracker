@@ -1,4 +1,4 @@
--- PostgreSQL consolidated baseline through migration 034.
+-- PostgreSQL consolidated baseline through migration 036.
 -- Initialize a new schema or re-run against a schema already at that version.
 -- For existing schemas with pending migrations, apply those migrations first.
 -- Existing application rows and wallet providers are preserved.
@@ -716,6 +716,83 @@ CREATE TABLE IF NOT EXISTS subscription_payments (
 CREATE INDEX IF NOT EXISTS ix_subscription_payment_order ON subscription_payments (order_id);
 
 
+CREATE TABLE IF NOT EXISTS budgets (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    months INTEGER,
+    version INTEGER NOT NULL DEFAULT 1,
+    CONSTRAINT ck_budget_months CHECK (months BETWEEN 1 AND 120),
+    CONSTRAINT ck_budget_version CHECK (version > 0)
+);
+CREATE INDEX IF NOT EXISTS ix_budgets_user_id ON budgets (user_id);
+
+CREATE TABLE IF NOT EXISTS budget_categories (
+    id UUID PRIMARY KEY,
+    budget_id UUID NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    notes VARCHAR(1000) NOT NULL,
+    CONSTRAINT uq_budget_category_position UNIQUE (budget_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS budget_items (
+    id UUID PRIMARY KEY,
+    category_id UUID NOT NULL REFERENCES budget_categories(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    brand VARCHAR(100) NOT NULL,
+    seller VARCHAR(150) NOT NULL,
+    specification VARCHAR(150) NOT NULL,
+    unit_price BIGINT NOT NULL,
+    quantity INTEGER NOT NULL,
+    link VARCHAR(2048) NOT NULL,
+    notes VARCHAR(1000) NOT NULL,
+    CONSTRAINT uq_budget_item_position UNIQUE (category_id, position),
+    CONSTRAINT ck_budget_item_quantity CHECK (quantity BETWEEN 1 AND 10000),
+    CONSTRAINT ck_budget_item_price CHECK (unit_price BETWEEN 0 AND 1000000000)
+);
+
+CREATE TABLE IF NOT EXISTS shared_subscriptions (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    monthly_amount BIGINT NOT NULL,
+    CONSTRAINT ck_shared_subscription_amount CHECK (monthly_amount BETWEEN 1 AND 1000000000)
+);
+CREATE INDEX IF NOT EXISTS ix_shared_subscriptions_owner ON shared_subscriptions (user_id);
+
+CREATE TABLE IF NOT EXISTS shared_subscription_members (
+    id UUID PRIMARY KEY,
+    subscription_id UUID NOT NULL REFERENCES shared_subscriptions(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    joined_on DATE NOT NULL,
+    left_on DATE,
+    pay_at_year_end BOOLEAN NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    CONSTRAINT ck_shared_member_dates CHECK (left_on IS NULL OR left_on >= joined_on),
+    CONSTRAINT ck_shared_member_version CHECK (version > 0)
+);
+CREATE INDEX IF NOT EXISTS ix_shared_subscription_members_group ON shared_subscription_members (subscription_id);
+
+CREATE TABLE IF NOT EXISTS shared_subscription_waivers (
+    member_id UUID NOT NULL REFERENCES shared_subscription_members(id) ON DELETE CASCADE,
+    month DATE NOT NULL,
+    PRIMARY KEY (member_id, month)
+);
+
+CREATE TABLE IF NOT EXISTS shared_subscription_receipts (
+    id UUID PRIMARY KEY,
+    member_id UUID NOT NULL REFERENCES shared_subscription_members(id) ON DELETE CASCADE,
+    transaction_id UUID UNIQUE REFERENCES ledger_transactions(id) ON DELETE CASCADE,
+    amount BIGINT NOT NULL,
+    paid_on DATE NOT NULL,
+    start_month DATE,
+    notes VARCHAR(1000) NOT NULL,
+    CONSTRAINT ck_shared_receipt_amount CHECK (amount BETWEEN 1 AND 1000000000000)
+);
+CREATE INDEX IF NOT EXISTS ix_shared_subscription_receipts_member ON shared_subscription_receipts (member_id);
+
 DO $$
 DECLARE required_column RECORD;
 BEGIN
@@ -727,7 +804,7 @@ BEGIN
         SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
         AND table_name = 'wallet_providers' AND column_name = 'platform_type'
     ) THEN
-        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 034.';
+        RAISE EXCEPTION 'Struktur billing lama: jalankan migration yang belum diterapkan sampai 036.';
     END IF;
     FOR required_column IN SELECT * FROM (VALUES
         ('wishlist_photos', 'blob_url'),
@@ -775,7 +852,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
             WHERE c.table_schema = current_schema() AND c.table_name = required_column.table_name
             AND c.column_name = required_column.column_name) THEN
-            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 034.', required_column.table_name, required_column.column_name;
+            RAISE EXCEPTION 'Kolom %.% belum tersedia: jalankan migration yang belum diterapkan sampai 036.', required_column.table_name, required_column.column_name;
         END IF;
     END LOOP;
 END $$;

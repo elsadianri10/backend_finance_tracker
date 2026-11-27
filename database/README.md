@@ -1,6 +1,6 @@
 # Script database PostgreSQL
 
-- `000_init.sql`: baseline PostgreSQL sampai 034. Membuat struktur dan seed yang belum tersedia serta mempertahankan data yang ada. Gunakan migrasi bernomor untuk database lama.
+- `000_init.sql`: baseline PostgreSQL sampai 036. Membuat struktur dan seed yang belum tersedia serta mempertahankan data yang ada. Gunakan migrasi bernomor untuk database lama.
 - `001_create_billing_accounts.sql`: platform bank/paylater, relasi tipe yang didukung, akun milik pengguna, dan seed BCA, BRI, GoPay Later, ShopeePay Later.
 - `002_create_billing_transactions.sql`: transaksi per akun dan jadwal cicilan, nominal NUMERIC, serta waktu pembayaran. Telah dijalankan pada database lokal 7 Oktober 2026. Database lain perlu menjalankan script ini sekali.
 - `003_merge_billing_platform_types.sql`: memindahkan tipe ke kolom nullable `billing_platforms.platform_type`, mempertahankan batasan tipe lama, mengganti foreign key akun, dan menghapus tabel relasi lama. Telah dijalankan pada database lokal 7 Oktober 2026. NULL mengizinkan kedua tipe akun.
@@ -22,8 +22,8 @@
 - `021_passkeys.sql`: menambah `users.auth_version` dan tiga tabel relasional passkey/challenge/kode pemulihan. Tidak mengubah data keuangan atau mengaktifkan passkey akun secara otomatis. Uji: `tests/check_passkey_migration.py`; `--apply` membuat backup dan membandingkan seluruh record sebelum commit. Diterapkan pada database proyek 12 Oktober 2026 tanpa reset. Konfigurasi domain/deployment: [Passkey](../docs/passkeys.md).
 - `025_stock_product_replenishment.sql`: dua kolom override jeda/penundaan beli ulang per produk, default lama tetap aktif. Jalankan setelah 024. Uji data terisi/upgrade berulang/baseline hanya di schema sintetis: `tests/check_stock_migration.py`.
 - `024_stock_needs.sql`: tiga tabel stok kebutuhan/produk/riwayat bertipe. Additive, tanpa perubahan data keuangan/Wishlist; jalankan setelah 023. Uji upgrade berulang, data terisi, pembelian bersamaan dan baseline/reset hanya dalam schema sintetis: `tests/check_stock_migration.py`.
-- Perubahan berikutnya memakai `035_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
-- Database baru memakai 000 yang sudah mencakup 001–034. Database lama memakai migrasi yang belum diterapkan sesuai urutan. Catat versi yang sudah diterapkan. Migrasi dijalankan terpisah sebelum aplikasi mulai.
+- Perubahan berikutnya memakai `037_...` dan seterusnya. Penambahan kolom juga memakai nomor berikutnya. Fitur baru memakai tabel relasional dan kolom bertipe, tanpa JSON/JSONB.
+- Database baru memakai 000 yang sudah mencakup 001–036. Database lama memakai migrasi yang belum diterapkan sesuai urutan. Catat versi yang sudah diterapkan. Migrasi dijalankan terpisah sebelum aplikasi mulai.
 - 000 adalah snapshot baseline terkini; perubahan 000 tidak dipakai untuk upgrade database yang sudah berjalan. Jangan ubah migration historis 001 dan seterusnya. Tambahkan file baru dengan `ALTER TABLE` atau `CREATE TABLE` dan transaksi `BEGIN` / `COMMIT`.
 - Buat database terlebih dahulu; script tidak membuat database atau user PostgreSQL.
 
@@ -100,3 +100,7 @@ File `upgrades/neon_repair_023_025.sql` hanya mencakup tiga migrasi tersebut dan
 ## Upgrade Neon dari 025 ke 034
 
 Jika Neon sudah sampai 025, jalankan seluruh [gabungan migrasi 026–034](upgrades/neon_upgrade_026_034.sql) dalam satu kali eksekusi di SQL Editor. File memakai satu transaksi dan mempertahankan data keuangan. Migrasi 027 memulai trial 30 hari bagi akun lama yang belum punya trial, dan migrasi 031 menetapkan admin awal. Setelah berhasil, jalankan `scripts/release_preflight.py` dengan konfigurasi Neon tujuan sebelum deploy.
+
+[Migrasi 035](035_budgeting.sql) menambah tabel Budgeting, kategori, dan item. Untuk deployment yang sudah sampai 034, jalankan 035 lalu preflight sebelum rilis Budgeting. Migrasi ini mempertahankan transaksi keuangan yang sudah ada.
+
+[Migrasi 036](036_shared_subscriptions.sql) menambah tabel Patungan Langganan dan tautan unik ke transaksi uang masuk yang sudah ada. Terapkan setelah 035 dan jalankan preflight sebelum deployment.

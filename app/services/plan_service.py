@@ -6,7 +6,7 @@ from app.models import AccountAccess, User, BankAccount, Saving, RoutinePlan, Ro
 from app.services.access_service import status, require_pro
 
 FREE_LIMITS = {'bankAccounts': 3, 'savings': 3, 'routine': 3, 'splitBills': 2}
-PRO_MENUS = ['billing', 'debts', 'bankAccounts', 'savings', 'routine', 'splitBills', 'wishlist', 'stockNeeds']
+PRO_MENUS = ['billing', 'debts', 'bankAccounts', 'savings', 'routine', 'splitBills', 'wishlist', 'stockNeeds', 'budgeting', 'patungan']
 
 
 def active_routines(user_id):
@@ -59,4 +59,6 @@ def catalog():
             {'Key':'splitPdf','Free':'UNAVAILABLE','Pro':'FULL'},
             {'Key':'wishlist','Free':'SHARED_GIFTS','Pro':'FULL'},
             {'Key':'stockNeeds','Free':'UNAVAILABLE','Pro':'FULL'},
+            {'Key':'budgeting','Free':'UNAVAILABLE','Pro':'FULL'},
+            {'Key':'patungan','Free':'UNAVAILABLE','Pro':'FULL'},
         ]}

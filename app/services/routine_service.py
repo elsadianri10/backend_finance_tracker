@@ -42,34 +42,39 @@ async def bank_label(bank_id, user_id, db):
     return bank['PlatformName'] + ' · ' + bank['AccountNumberMasked']
 
 
-def transaction_response(row):
+def transaction_response(row, subscription_receipt_id=None):
     return {'Id': str(row.id), 'Version': row.version, 'Kind': row.kind, 'Category': row.category, 'Description': row.description,
             'Amount': row.amount, 'TransactionDate': row.transaction_date.isoformat(), 'SourceBankId': str(row.source_bank_id) if row.source_bank_id else None,
             'DestinationBankId': str(row.destination_bank_id) if row.destination_bank_id else None, 'SourceLabel': row.source_label,
             'DestinationLabel': row.destination_label, 'Notes': row.notes, 'RoutinePaymentId': str(row.routine_payment_id) if row.routine_payment_id else None,
             'BillingInstallmentId': str(row.billing_installment_id) if row.billing_installment_id else None,
             'DebtPaymentId': str(row.debt_payment_id) if row.debt_payment_id else None,
-            'SavingMovementId': str(row.saving_movement_id) if row.saving_movement_id else None}
+            'SavingMovementId': str(row.saving_movement_id) if row.saving_movement_id else None,
+            'SubscriptionReceiptId': str(subscription_receipt_id) if subscription_receipt_id else None}
 
 
 async def list_transactions(user_id, db, month=None):
+    from app.models.patungan_model import SubscriptionReceipt
     ledger = LedgerTransaction
     query = select(
         ledger.id, ledger.version, ledger.kind, ledger.category, ledger.description, ledger.amount,
         ledger.transaction_date, ledger.source_bank_id, ledger.destination_bank_id, ledger.source_label,
         ledger.destination_label, ledger.notes, ledger.routine_payment_id, ledger.billing_installment_id,
-        ledger.debt_payment_id, ledger.saving_movement_id,
-    ).where(ledger.user_id == user_id, ledger.voided_at.is_(None))
+        ledger.debt_payment_id, ledger.saving_movement_id, SubscriptionReceipt.id.label('subscription_receipt_id'),
+    ).outerjoin(SubscriptionReceipt, SubscriptionReceipt.transaction_id == ledger.id).where(
+        ledger.user_id == user_id, ledger.voided_at.is_(None),
+    )
     if month is not None:
         start = date.fromisoformat(month + '-01')
         end = start.replace(day=calendar.monthrange(start.year, start.month)[1])
         query = query.where(ledger.transaction_date.between(start, end))
     rows = await db.execute(query.order_by(ledger.transaction_date.desc(), ledger.created_at.desc(), ledger.id))
-    return [transaction_response(row) for row in rows]
+    return [transaction_response(row, row.subscription_receipt_id) for row in rows]
 
 
 async def save_transaction(payload, user_id, db, item_id=None, *, expected_version=None):
     from hashlib import sha256
+    from app.services.patungan_service import linked_payment
     from app.services.payment_sync_service import lock_owner
     await lock_owner(user_id, db)
     fingerprint = sha256(payload.model_dump_json(exclude={'request_id', 'version'}).encode()).hexdigest()
@@ -85,6 +90,8 @@ async def save_transaction(payload, user_id, db, item_id=None, *, expected_versi
         raise HTTPException(409, 'Pembayaran tertaut diubah melalui menu asal')
     if item_id and row.version != expected_version:
         raise HTTPException(409, 'Transaksi sudah berubah. Muat ulang sebelum menyimpan.')
+    if item_id and await linked_payment(row.id, db):
+        raise HTTPException(409, 'Lepas tautan pembayaran di Patungan Langganan sebelum mengedit transaksi')
     source = await bank_label(payload.source_bank_id, user_id, db)
     destination = await bank_label(payload.destination_bank_id, user_id, db)
     if linked:
@@ -117,9 +124,14 @@ async def save_transaction(payload, user_id, db, item_id=None, *, expected_versi
 
 
 async def remove_transaction(item_id, user_id, db):
+    from app.services.patungan_service import linked_payment
+    from app.services.payment_sync_service import lock_owner
+    await lock_owner(user_id, db)
     row = await owned(LedgerTransaction, item_id, user_id, db, True)
     if row.routine_payment_id or row.billing_installment_id or row.debt_payment_id or row.saving_movement_id:
         raise HTTPException(409, 'Pembayaran tertaut dikelola melalui menu asal')
+    if await linked_payment(row.id, db):
+        raise HTTPException(409, 'Lepas tautan pembayaran di Patungan Langganan sebelum menghapus transaksi')
     row.voided_at = datetime.now(timezone.utc)
     await db.commit()
 
