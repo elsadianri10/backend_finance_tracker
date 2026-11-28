@@ -91,7 +91,7 @@ async def save_transaction(payload, user_id, db, item_id=None, *, expected_versi
     if item_id and row.version != expected_version:
         raise HTTPException(409, 'Transaksi sudah berubah. Muat ulang sebelum menyimpan.')
     if item_id and await linked_payment(row.id, db):
-        raise HTTPException(409, 'Lepas tautan pembayaran di Patungan Langganan sebelum mengedit transaksi')
+        raise HTTPException(409, 'Lepas tautan pembayaran di Shared Subscription sebelum mengedit transaksi')
     source = await bank_label(payload.source_bank_id, user_id, db)
     destination = await bank_label(payload.destination_bank_id, user_id, db)
     if linked:
@@ -131,7 +131,7 @@ async def remove_transaction(item_id, user_id, db):
     if row.routine_payment_id or row.billing_installment_id or row.debt_payment_id or row.saving_movement_id:
         raise HTTPException(409, 'Pembayaran tertaut dikelola melalui menu asal')
     if await linked_payment(row.id, db):
-        raise HTTPException(409, 'Lepas tautan pembayaran di Patungan Langganan sebelum menghapus transaksi')
+        raise HTTPException(409, 'Lepas tautan pembayaran di Shared Subscription sebelum menghapus transaksi')
     row.voided_at = datetime.now(timezone.utc)
     await db.commit()
 
